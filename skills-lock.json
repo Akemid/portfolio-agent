@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "skills": {
+    "amazon-bedrock": {
+      "source": "aws/agent-toolkit-for-aws",
+      "sourceType": "github",
+      "skillPath": "skills/core-skills/amazon-bedrock/SKILL.md",
+      "computedHash": "a8237913e5c42ae09095d8a8682f984862ffb68698fb5e46e4ef6553ac362c6c"
+    },
+    "aws-cdk": {
+      "source": "aws/agent-toolkit-for-aws",
+      "sourceType": "github",
+      "skillPath": "skills/core-skills/aws-cdk/SKILL.md",
+      "computedHash": "4480c20e15885a356ba96334c50b0e726d0e89b533872ad92c03a767972ef28d"
+    },
+    "aws-iam": {
+      "source": "aws/agent-toolkit-for-aws",
+      "sourceType": "github",
+      "skillPath": "skills/core-skills/aws-iam/SKILL.md",
+      "computedHash": "b2823e620706ccd7286ec37c68c7fb954db11e0d7154915ea640f81ee1cd6eaa"
+    },
+    "aws-sdk-python-usage": {
+      "source": "aws/agent-toolkit-for-aws",
+      "sourceType": "github",
+      "skillPath": "skills/core-skills/aws-sdk-python-usage/SKILL.md",
+      "computedHash": "cdd24e3232b66ff9c25859cd4c540d65fab74e0ddf7d5fd1b39576692463038f"
+    },
+    "aws-serverless": {
+      "source": "aws/agent-toolkit-for-aws",
+      "sourceType": "github",
+      "skillPath": "skills/core-skills/aws-serverless/SKILL.md",
+      "computedHash": "da04d6caff23d104fc40559f2cee624dceacbc05e4af2e70cd84e1a9e14415e3"
+    },
+    "aws-well-architected-framework-review": {
+      "source": "aws-samples/sample-well-architected-skills-and-steering",
+      "sourceType": "github",
+      "skillPath": "skills/aws-well-architected-framework-review/SKILL.md",
+      "computedHash": "c67b54407fc10a3c404f20c2c3385b452debaf4f27d109740a7a77e6faead8ba"
+    },
+    "connecting-lambda-to-dynamodb": {
+      "source": "aws/agent-toolkit-for-aws",
+      "sourceType": "github",
+      "skillPath": "skills/specialized-skills/serverless-skills/connecting-lambda-to-dynamodb/SKILL.md",
+      "computedHash": "3e3ae2ed61bd53904086a2b1d1feb3901c6fcad557708c9cd02412d4b0f2c497"
+    }
+  }
+}
