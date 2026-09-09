@@ -19,6 +19,13 @@ build/
 .coverage
 htmlcov/
 cdk.out/
+# CDK context cache may contain account ids and VPC/AZ lookups
+cdk.context.json
+
+# Credentials and key material
+*.pem
+*.key
+.aws/
 
 # Personal content — MUST NEVER be committed (knowledge-base spec)
 content/
