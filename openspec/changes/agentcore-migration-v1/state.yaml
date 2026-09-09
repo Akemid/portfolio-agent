@@ -57,8 +57,23 @@ phases:
       strategy is ask-on-risk, so the orchestrator must ask the owner before
       sdd-apply starts.
   apply:
-    status: pending
+    status: in_progress
     depends_on: [tasks]
+    engram_topic_key: sdd/agentcore-migration-v1/apply-progress
+    batches:
+      - pr: PR0
+        branch: chore/sdd-planning-artifacts
+        scope: planning artifacts, LICENSE, .gitignore, legacy diagram
+        status: pr_open
+        pr_url: https://github.com/Akemid/portfolio-agent/pull/1
+        security_gate: PASS
+      - pr: PR1
+        branch: feat/bootstrap-ci
+        scope: Phase 1 bootstrap + CI
+        status: implemented_pending_review
+        note: >-
+          Apply executor stalled after completing Phase 1 commits; orchestrator
+          finished the spec latency alignment and persistence.
   verify:
     status: pending
     depends_on: [apply]

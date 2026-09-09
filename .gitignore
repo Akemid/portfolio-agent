@@ -4,3 +4,29 @@ docs/blog/
 .atl/
 # Third-party agent skills installed locally (see .atl/skill-registry.md); not redistributed
 .claude/skills/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.env
+.env.*
+build/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+cdk.out/
+# CDK context cache may contain account ids and VPC/AZ lookups
+cdk.context.json
+
+# Credentials and key material
+*.pem
+*.key
+.aws/
+
+# Personal content — MUST NEVER be committed (knowledge-base spec)
+content/
+*.pdf

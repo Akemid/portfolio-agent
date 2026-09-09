@@ -43,31 +43,31 @@ sub-PR if the real diff exceeds ~450 lines; the split points are noted inline be
 
 ## Phase 1: Bootstrap and CI (PR 1)
 
-- [ ] 1.1 `pyproject.toml` + `uv.lock` + `.python-version` — Python 3.12, deps: `boto3`
+- [x] 1.1 `pyproject.toml` + `uv.lock` + `.python-version` — Python 3.12, deps: `boto3`
       (pinned), `aws-cdk-lib` (pinned), `strands-agents`, `bedrock-agentcore`; dev deps:
       `pytest`, `pytest-cov`, `ruff`, `mypy` (optional), `moto` or `botocore` stub tools.
       `[tool.pytest.ini_options] pythonpath = ["src"]`. No RED (config-only).
       Acceptance: `infrastructure` — *Infrastructure as Code* precondition; `uv run
       pytest` exits 0 with zero tests. Est: ~55 lines.
-- [ ] 1.2 Package skeleton — `src/api/{domain,ports,adapters,http}/__init__.py`,
+- [x] 1.2 Package skeleton — `src/api/{domain,ports,adapters,http}/__init__.py`,
       `src/agent/__init__.py`, `infra/__init__.py`, `tests/{unit,contract,smoke}/__init__.py`,
       `scripts/.gitkeep`. No RED (structure-only). Acceptance: modules importable.
       Est: ~20 lines.
-- [ ] 1.3 Extend `.gitignore` with Python patterns (`__pycache__/`, `.venv/`, `.env`,
+- [x] 1.3 Extend `.gitignore` with Python patterns (`__pycache__/`, `.venv/`, `.env`,
       `build/`, `.pytest_cache/`, `.coverage`, `htmlcov/`) and content paths (`content/`,
       `*.pdf`), keeping the existing `docs/blog/` and `.atl/` lines.
       RED: `tests/unit/test_repo_hygiene.py::test_gitignore_covers_content_and_pdfs` —
       reads `.gitignore`, asserts it contains `content/` and `*.pdf`.
       GREEN: add the lines. Acceptance: `knowledge-base` — *Content Never Committed*,
       scenario *Gitignored content path*. Est: ~15 lines.
-- [ ] 1.4 CI workflow `.github/workflows/ci.yml` — jobs: `ruff check .`, `ruff format
+- [x] 1.4 CI workflow `.github/workflows/ci.yml` — jobs: `ruff check .`, `ruff format
       --check .`, `pytest --cov=src --cov-fail-under=85`, `gitleaks detect --no-git -v`,
       `pip-audit`, content-guard, `cdk synth --all`.
       RED: `tests/unit/test_ci_workflow.py::test_ci_yaml_has_required_jobs` — parses the
       YAML and asserts each required command string is present.
       GREEN: write the workflow. Acceptance: `infrastructure` — *CI Quality Gates*
       (both scenarios). Est: ~95 lines.
-- [ ] 1.5 Content-guard check — `scripts/check_no_content.sh`, invoked as a CI step,
+- [x] 1.5 Content-guard check — `scripts/check_no_content.sh`, invoked as a CI step,
       fails if the PR diff adds a path under `content/`.
       RED: `tests/unit/test_content_guard.py::test_content_guard_fails_on_content_diff` —
       feeds a fixture diff containing `content/cv/x.pdf`, asserts non-zero exit.

@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Lint, test, and scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        # actions/checkout v4 (pinned by commit SHA for supply-chain safety)
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        # astral-sh/setup-uv v3 (pinned by commit SHA for supply-chain safety)
+        uses: astral-sh/setup-uv@8d55fbecc275b1c35dbe060458839f8d30439ccf
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: uv sync --all-groups
+
+      - name: Lint (ruff check)
+        run: uv run ruff check .
+
+      - name: Format check (ruff format)
+        run: uv run ruff format --check .
+
+      - name: Tests with coverage gate
+        run: uv run pytest --cov=src --cov-fail-under=85
+
+      - name: Install gitleaks
+        env:
+          GITLEAKS_VERSION: "8.21.2"
+          GITLEAKS_SHA256: "5bc41815076e6ed6ef8fbecc9d9b75bcae31f39029ceb55da08086315316e3ba"
+        run: |
+          curl -sSfL -o gitleaks.tar.gz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  gitleaks.tar.gz" | sha256sum --check
+          sudo tar -xz -C /usr/local/bin -f gitleaks.tar.gz gitleaks
+          rm gitleaks.tar.gz
+
+      - name: Secret scan (gitleaks, full git history, redacted output)
+        run: gitleaks detect --source . --redact -v
+
+      - name: Dependency scan (pip-audit)
+        run: uv run pip-audit
+
+      - name: Content guard — no personal content in the diff
+        run: |
+          git diff --unified=0 "origin/${{ github.event.pull_request.base.ref || 'main' }}"...HEAD > pr.diff || true
+          bash scripts/check_no_content.sh pr.diff
+
+      - name: CDK synth
+        # Skipped until infra/app.py exists (added in PR7 — CDK DataStack).
+        # See openspec/changes/agentcore-migration-v1/tasks.md, Phase 7.
+        run: |
+          if [ -f infra/app.py ]; then
+            uv run cdk synth --all
+          else
+            echo "Skipping cdk synth: infra/app.py not yet added (see PR7)."
+          fi
