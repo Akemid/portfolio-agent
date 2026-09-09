@@ -84,7 +84,8 @@ phases:
           Session, RateLimitDecision), domain errors, derive_key hashing,
           the five Protocol ports (SessionStore, RateLimiter, AgentClient,
           Clock, Ids), and the four in-memory test fakes.
-        status: implemented_pending_review
+        status: pr_open
+        pr_url: https://github.com/Akemid/portfolio-agent/pull/4
         commits:
           - a3a4add feat(domain): add chat request/answer/session models and domain errors
           - 02b5690 feat(domain): add derive_key hashing utility
@@ -92,12 +93,13 @@ phases:
           - 2bcbbb8 test(fakes): add in-memory port fakes for session store, rate limiter, agent client, clock
           - 2ab3e3d refactor(domain,ports): tighten docstrings to fit PR2a's review budget
           - 49a138d test(domain): narrow model tests to required scenarios, drop fakes smoke test
+          - c4219c9 fix(domain): exclude session id from Session repr to keep it out of logs
         tasks_completed: ["2.1", "2.2", "2.3", "2.4", "2.5"]
         cut: >-
           PR2a = tasks 2.1-2.5 (models/errors/hashing/ports/fakes), exactly the
           split point tasks.md's own 2.G gate names. PR2b = tasks 2.6 (session
           identity domain logic) + 2.7 (cookie attribute builder) + 2.R
-          (refactor) + 2.G (review gate), not started.
+          (refactor) + 2.G (review gate).
         diff_stat: 19 files changed, 374 insertions(+) (git diff --stat main..feat/domain-core-a, excludes uv.lock)
         local_gate: >-
           ruff check clean, ruff format clean, mypy src clean, 31 tests pass,
@@ -111,7 +113,55 @@ phases:
           measured 516 changed lines; trimmed non-mandated smoke tests and
           docstrings down to 374 (tasks.md's own 2.5 note says fakes need "No
           RED... exercised by 2.6 and Phase 4 tests", so the extra fakes
-          smoke test was dropped, not the fakes themselves).
+          smoke test was dropped, not the fakes themselves). Open as PR #4
+          against main, reviewed (code APPROVE, security PASS after fixing a
+          MEDIUM: Session repr leaked the session id, fixed with
+          field(repr=False)), awaiting owner merge.
+      - pr: PR2b
+        branch: feat/domain-core-b
+        base: feat/domain-core-a
+        scope: >-
+          Phase 2 second half — session identity domain logic
+          (decide_session), the session cookie builder/parser, plus three
+          items carried from PR2a's review: the dropped fakes smoke test, a
+          tz-aware guard on Session.issued_at, and a [tool.pyright] editor
+          config.
+        status: implemented_pending_review
+        commits:
+          - ec602a6 fix(domain): reject naive issued_at on Session
+          - cd6d2f4 feat(domain): add decide_session for session identity
+          - ec34b01 feat(http): add session cookie builder and parser
+          - cedd82f test(fakes): add behavioral smoke tests for port fakes
+          - 2dc5b08 chore(config): add pyright extraPaths for editor import resolution
+        tasks_completed: ["2.6", "2.7", "2.R"]
+        diff_stat: >-
+          9 files changed, 353 insertions(+) (git diff --stat
+          feat/domain-core-a..feat/domain-core-b, excludes uv.lock)
+        local_gate: >-
+          ruff check clean, ruff format clean, mypy src clean, 57 tests pass
+          (up from 34 baseline), coverage 100% on the touched modules
+          (--cov=src --cov-fail-under=85).
+        note: >-
+          Strict TDD followed throughout: each production module was preceded
+          by a RED run (ImportError, or an explicit "DID NOT RAISE" failure
+          for the Session naive-datetime guard) before its GREEN
+          implementation. decide_session's GREEN step already called
+          derive_key("db", ...) from 2.3, so task 2.R found no duplicated
+          hashing to extract; it did find a duplicated session-id
+          shape-validation regex between 2.6 and 2.7, extracted to
+          session_identity.is_valid_session_id_shape and imported by
+          http/cookies.py. Cross-test-package imports (tests/unit/... ->
+          tests/fakes/...) resolve as `from fakes.x import Y`, not
+          `tests.fakes.x`, because pytest's rootdir-insertion treats `tests/`
+          itself as the inserted sys.path entry (no tests/__init__.py exists);
+          this is now the established pattern for reusing fakes across test
+          modules. Session id shape validation (charset
+          `[A-Za-z0-9_-]{22,128}`) is a local design choice, not spec-mandated
+          text -- it matches `secrets.token_urlsafe(32)` output and rejects
+          cookie-injected garbage before any store lookup. Task 2.G (fresh
+          security-review + code review) is intentionally NOT checked off --
+          it is a merge gate performed outside apply, not an implementation
+          task.
   verify:
     status: pending
     depends_on: [apply]
