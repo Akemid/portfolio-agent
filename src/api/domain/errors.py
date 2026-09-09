@@ -1,9 +1,4 @@
-"""Typed domain errors raised by the chat use case.
-
-The HTTP layer (`src/api/http/responder.py`, Phase 4) maps each of these to a
-public status code without leaking internal detail (`chat-endpoint` spec,
-*Upstream Failure Mapping*).
-"""
+"""Typed domain errors, mapped to status codes by the HTTP layer (Phase 4)."""
 
 from __future__ import annotations
 
@@ -17,12 +12,7 @@ class ValidationError(DomainError):
 
 
 class RateLimited(DomainError):
-    """Raised when a rate limit has been exceeded.
-
-    Attributes:
-        scope: Which limit was hit — `"session"` or `"ip"`.
-        retry_after: Seconds until the caller may retry.
-    """
+    """Raised when a rate limit has been exceeded. `scope` is `"session"` or `"ip"`."""
 
     def __init__(self, scope: str, retry_after: int) -> None:
         super().__init__(f"rate limit exceeded for scope={scope!r}, retry_after={retry_after}s")

@@ -1,9 +1,4 @@
-"""Frozen domain value objects for the chat use case.
-
-These types carry no I/O and no AWS dependency — see design.md §4 (Lambda
-Module Design), which requires the use case to depend only on ports and
-values defined here.
-"""
+"""Frozen domain value objects for the chat use case (design.md §4). No I/O, no AWS."""
 
 from __future__ import annotations
 

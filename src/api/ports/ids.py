@@ -9,9 +9,5 @@ class Ids(Protocol):
     """Generates opaque session identifiers."""
 
     def new_session_id(self) -> str:
-        """Return a fresh, cryptographically random session id.
-
-        Implementations MUST provide at least 128 bits of entropy
-        (`session-identity` spec, *Session Identifier Quality*).
-        """
+        """Return a fresh id with at least 128 bits of entropy (`session-identity` spec)."""
         ...

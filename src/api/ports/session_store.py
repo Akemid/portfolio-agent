@@ -8,11 +8,7 @@ from api.domain.models import Session
 
 
 class SessionStore(Protocol):
-    """Reads and creates session records.
-
-    Implementations MUST NOT persist personally identifiable information
-    (`session-identity` spec, *No PII in Session Records*).
-    """
+    """Reads and creates session records. MUST NOT persist PII (`session-identity` spec)."""
 
     def get(self, hashed_id: str) -> Session | None:
         """Return the session for `hashed_id`, or `None` if unknown or expired."""
