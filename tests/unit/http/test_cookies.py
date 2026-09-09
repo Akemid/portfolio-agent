@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
-from api.http.cookies import build_set_cookie_header, parse_session_cookie
+from api.domain.session_identity import SESSION_TTL
+from api.http.cookies import DEFAULT_MAX_AGE_SECONDS, build_set_cookie_header, parse_session_cookie
 
 SESSION_ID = "a" * 43  # shape of `secrets.token_urlsafe(32)` output
+
+
+def test_default_max_age_is_derived_from_the_session_ttl() -> None:
+    """The cookie lifetime and the server-side TTL MUST come from one constant."""
+    assert int(SESSION_TTL.total_seconds()) == DEFAULT_MAX_AGE_SECONDS
 
 
 def test_cookie_has_all_required_flags() -> None:
@@ -53,5 +59,18 @@ def test_parse_tolerates_whitespace_around_cookie_pairs() -> None:
 
 def test_parse_rejects_value_outside_the_session_id_charset() -> None:
     header = "session_id=<script>alert(1)</script>"
+
+    assert parse_session_cookie(header) is None
+
+
+def test_parse_rejects_duplicate_session_cookies() -> None:
+    """Two `session_id` cookies are ambiguous (cookie-injection shape); treat as no cookie."""
+    header = f"session_id={SESSION_ID}; theme=dark; session_id={'b' * 43}"
+
+    assert parse_session_cookie(header) is None
+
+
+def test_parse_rejects_oversized_value() -> None:
+    header = f"session_id={'a' * 129}"
 
     assert parse_session_cookie(header) is None

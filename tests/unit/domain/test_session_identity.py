@@ -106,6 +106,17 @@ def test_session_exactly_24_hours_old_is_treated_as_expired() -> None:
     assert session.session_id != existing.session_id
 
 
+def test_naive_clock_now_is_rejected_when_reusing_a_session() -> None:
+    """A naive `now()` must surface as a domain error, never as a bare TypeError from datetime math."""
+    aware_clock = FrozenClock(ISSUED_AT)
+    store = FakeSessionStore(clock=aware_clock)
+    existing = store.create()
+    naive_clock = FrozenClock(datetime(2026, 9, 9, 13, 0))  # no tzinfo
+
+    with pytest.raises(ValidationError):
+        decide_session(existing.session_id, store, naive_clock)
+
+
 def test_naive_clock_now_is_rejected_when_creating_a_session() -> None:
     naive_clock = FrozenClock(datetime(2026, 9, 9, 12, 0))  # no tzinfo
     store = FakeSessionStore(clock=naive_clock)

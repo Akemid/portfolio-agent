@@ -12,6 +12,7 @@ from __future__ import annotations
 import re
 from datetime import timedelta
 
+from api.domain.errors import ValidationError
 from api.domain.hashing import derive_key
 from api.domain.models import Session
 from api.ports.clock import Clock
@@ -49,4 +50,7 @@ def decide_session(
 
 
 def _is_expired(session: Session, clock: Clock) -> bool:
-    return clock.now() >= session.issued_at + SESSION_TTL
+    now = clock.now()
+    if now.tzinfo is None:
+        raise ValidationError("Clock.now() must return a timezone-aware datetime")
+    return now >= session.issued_at + SESSION_TTL

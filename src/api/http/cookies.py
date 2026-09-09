@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from api.domain.session_identity import is_valid_session_id_shape
+from api.domain.session_identity import SESSION_TTL, is_valid_session_id_shape
 
 SESSION_COOKIE_NAME = "session_id"
-DEFAULT_MAX_AGE_SECONDS = 86400  # Fixed 24h TTL — mirrors `session_identity.SESSION_TTL`.
+# Single source of truth for the fixed 24h lifetime: the cookie expires exactly when the server does.
+DEFAULT_MAX_AGE_SECONDS = int(SESSION_TTL.total_seconds())
 
 
 def build_set_cookie_header(
@@ -36,16 +37,21 @@ def build_set_cookie_header(
 def parse_session_cookie(cookie_header: str | None) -> str | None:
     """Extract the `session_id` cookie value from a raw `Cookie` header.
 
-    Returns `None` when the header is absent, the cookie is missing, or the
-    value does not match the expected id shape — callers treat that the same
-    as "no cookie" and let `decide_session` issue a new one.
+    Returns `None` when the header is absent, the cookie is missing, the
+    value does not match the expected id shape, or the cookie appears more
+    than once (ambiguous, cookie-injection shape) — callers treat all of
+    these the same as "no cookie" and let `decide_session` issue a new one.
     """
     if not cookie_header:
         return None
 
-    for part in cookie_header.split(";"):
-        name, _, value = part.strip().partition("=")
-        if name == SESSION_COOKIE_NAME and is_valid_session_id_shape(value):
-            return value
+    candidates = [
+        value
+        for name, _, value in (part.strip().partition("=") for part in cookie_header.split(";"))
+        if name == SESSION_COOKIE_NAME
+    ]
+    if len(candidates) != 1:
+        return None
 
-    return None
+    value = candidates[0]
+    return value if is_valid_session_id_shape(value) else None
