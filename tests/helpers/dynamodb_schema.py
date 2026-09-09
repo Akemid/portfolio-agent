@@ -12,10 +12,9 @@ from typing import Any
 
 import boto3
 
+from api.adapters.dynamo_keys import PARTITION_KEY, SORT_KEY, TTL_ATTRIBUTE
+
 TABLE_NAME = "portfolio-agent-sessions"
-PARTITION_KEY = "pk"
-SORT_KEY = "sk"
-TTL_ATTRIBUTE = "ttl"
 
 
 def create_sessions_table(region_name: str = "us-east-1") -> Any:

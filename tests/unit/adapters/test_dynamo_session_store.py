@@ -12,6 +12,7 @@ from fakes.frozen_clock import FrozenClock
 
 from api.adapters.dynamo_session_store import DynamoSessionStore
 from api.domain.hashing import derive_key
+from api.domain.models import SessionRecord
 from api.domain.session_identity import SESSION_TTL
 
 ISSUED_AT = datetime(2026, 9, 9, 12, 0, tzinfo=UTC)
@@ -60,14 +61,13 @@ def test_get_round_trips_issued_at_by_hashed_id(dynamodb_table: object) -> None:
 
     fetched = store.get(derive_key("db", created.session_id))
 
-    assert fetched is not None
-    assert fetched.issued_at == created.issued_at
+    assert fetched == SessionRecord(issued_at=created.issued_at)
 
 
 def test_get_never_returns_or_stores_the_raw_session_id(dynamodb_table: object) -> None:
-    """design.md SS4.2: 'no raw session id ... is ever written'. The fetched
-    `Session.session_id` is therefore the hash, not the raw cookie value —
-    see the deviation documented on `DynamoSessionStore.get`.
+    """design.md SS4.2: 'no raw session id ... is ever written'. `get()` returns a
+    `SessionRecord`, which has no id field at all — hashed or raw — so the raw cookie
+    value cannot leak through it even by accident.
     """
     store = DynamoSessionStore(table=dynamodb_table, clock=FrozenClock(ISSUED_AT), ids=_FixedIds(RAW_SESSION_ID))
     created = store.create()
@@ -77,5 +77,5 @@ def test_get_never_returns_or_stores_the_raw_session_id(dynamodb_table: object) 
     stored_item = dynamodb_table.get_item(Key={"pk": f"SESSION#{hashed_id}", "sk": "META"})["Item"]
 
     assert fetched is not None
-    assert fetched.session_id != RAW_SESSION_ID
+    assert not hasattr(fetched, "session_id")
     assert RAW_SESSION_ID not in stored_item.values()
