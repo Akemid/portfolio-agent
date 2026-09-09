@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Literal
 
@@ -43,9 +43,13 @@ class AgentAnswer:
 
 @dataclass(frozen=True)
 class Session:
-    """An issued session record (`session-identity` spec, *No PII in Session Records*)."""
+    """An issued session record (`session-identity` spec, *No PII in Session Records*).
 
-    session_id: str
+    The session id is a bearer credential, so it is excluded from ``repr``/``str`` to keep it
+    out of logs and tracebacks (`chat-endpoint` spec, *Log Redaction*).
+    """
+
+    session_id: str = field(repr=False)
     issued_at: datetime
 
 
