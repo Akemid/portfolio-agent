@@ -1,0 +1,6 @@
+# Blog notes are kept outside this repository (../portfolio-agent-blog)
+docs/blog/
+# Local AI runtime state
+.atl/
+# Third-party agent skills installed locally (see .atl/skill-registry.md); not redistributed
+.claude/skills/

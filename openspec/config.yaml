@@ -1,0 +1,54 @@
+schema: spec-driven
+
+context: |
+  Purpose: Portfolio CV chatbot rebuilt on Amazon Bedrock AgentCore, migrating
+  the legacy `../ChatBotAPI` repo (FastAPI + LangChain + OpenAI + ChromaDB on a VPS).
+  Stack: Python 3.12, uv, pytest, ruff, mypy (optional).
+  Architecture: API Gateway HTTP API -> Lambda (HttpOnly session cookie,
+  DynamoDB TTL rate limits) -> InvokeAgentRuntime (SigV4) -> AgentCore Runtime
+  (Strands Agents) -> Bedrock Knowledge Base (S3 Vectors, Titan Embeddings V2)
+  + Amazon Nova Micro. Non-streaming, no conversation memory in v1. IaC: AWS
+  CDK in Python (to confirm in design). Blog notes: ../portfolio-agent-blog/, diagrams: docs/.
+
+strict_tdd: true
+
+testing:
+  test_command: "uv run pytest"
+  framework: pytest
+  layers:
+    unit: true
+    integration: unknown # to confirm once Lambda/AgentCore code exists
+    e2e: unknown
+  coverage:
+    available: planned
+    command: "uv run pytest --cov=src --cov-fail-under=85"
+    threshold: 85
+  quality:
+    linter: "ruff check ."
+    formatter: "ruff format ."
+    type_checker: "mypy ." # optional, not yet enforced
+
+rules:
+  proposal:
+    - Include rollback plan for risky changes (especially IaC and data migration)
+    - Call out AWS cost implications (Bedrock, Lambda, DynamoDB, S3 Vectors)
+  specs:
+    - Use Given/When/Then for scenarios
+    - Use RFC 2119 keywords (MUST, SHALL, SHOULD, MAY)
+  design:
+    - Include sequence diagrams for request flows (API Gateway -> Lambda -> AgentCore -> Bedrock)
+    - Document architecture decisions with rationale (link to ../portfolio-agent-blog/ posts where relevant)
+  tasks:
+    - Group by phase, use hierarchical numbering
+    - Keep tasks completable in one session
+    - Strict TDD is REQUIRED: write failing test before implementation for every task
+  apply:
+    - Follow existing code patterns
+    - tdd: true
+    - test_command: "uv run pytest"
+  verify:
+    test_command: "uv run pytest"
+    build_command: "uv run ruff check . && uv run ruff format --check ."
+    coverage_threshold: 85
+  archive:
+    - Warn before merging destructive deltas

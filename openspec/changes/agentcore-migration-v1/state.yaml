@@ -1,0 +1,136 @@
+schema: spec-driven
+change: agentcore-migration-v1
+title: AgentCore Migration v1
+created: 2026-09-07
+updated: 2026-09-08
+artifact_store: hybrid
+project: portfolio-agent
+
+phases:
+  explore:
+    status: done
+    artifact: "engram sdd/chatbot-agentcore-migration/explore (project: chatbotapi)"
+    note: Performed in the legacy repo before this repository existed.
+  proposal:
+    status: done
+    artifact: openspec/changes/agentcore-migration-v1/proposal.md
+    engram_topic_key: sdd/agentcore-migration-v1/proposal
+    engram_persisted: true
+    note: Mirrored to engram by the orchestrator (observation 2296) after the sdd-propose executor lacked engram tools.
+  spec:
+    status: done
+    depends_on: [proposal]
+    artifacts:
+      - openspec/changes/agentcore-migration-v1/specs/chat-endpoint/spec.md
+      - openspec/changes/agentcore-migration-v1/specs/session-identity/spec.md
+      - openspec/changes/agentcore-migration-v1/specs/rate-limiting/spec.md
+      - openspec/changes/agentcore-migration-v1/specs/knowledge-base/spec.md
+      - openspec/changes/agentcore-migration-v1/specs/agent-runtime/spec.md
+      - openspec/changes/agentcore-migration-v1/specs/infrastructure/spec.md
+    engram_topic_key: sdd/agentcore-migration-v1/spec
+    engram_persisted: true
+    note: >-
+      Mirrored to engram by the orchestrator (observation 2299) after the
+      sdd-spec executor lacked engram tools. File-based specs (hybrid mode's
+      openspec side) remain the source of truth.
+  design:
+    status: done
+    depends_on: [proposal]
+    artifact: openspec/changes/agentcore-migration-v1/design.md
+    engram_topic_key: sdd/agentcore-migration-v1/design
+    engram_persisted: true
+    note: >-
+      Persisted to engram by the sdd-design executor (observation 2302). Files on
+      disk remain the source of truth in hybrid mode. Read alongside the specs;
+      design resolves all seven proposal open questions with cited AWS sources.
+  tasks:
+    status: done
+    depends_on: [spec, design]
+    artifact: openspec/changes/agentcore-migration-v1/tasks.md
+    engram_topic_key: sdd/agentcore-migration-v1/tasks
+    engram_persisted: true
+    note: >-
+      9 in-repo PRs (phases 1-9) plus one external task (Phase 10, portfolio
+      widget). Review Workload Forecast: ~3,740 estimated changed lines total,
+      400-line budget risk High, chained PRs recommended. Chain strategy
+      (stacked-to-main vs feature-branch-chain) not yet chosen — delivery
+      strategy is ask-on-risk, so the orchestrator must ask the owner before
+      sdd-apply starts.
+  apply:
+    status: pending
+    depends_on: [tasks]
+  verify:
+    status: pending
+    depends_on: [apply]
+  archive:
+    status: pending
+    depends_on: [verify]
+
+next_recommended:
+  - sdd-apply
+
+blocked_reasons: []
+
+delivery:
+  delivery_strategy: ask-on-risk
+  decision: chained-prs
+  chain_strategy: stacked-to-main
+  decided: 2026-09-08
+  note: >-
+    Owner chose chained PRs merged to main in order. Slices estimated over 400
+    lines (PR2, PR4, PR8, PR9) are split a/b at apply time. A PR0 with the
+    planning artifacts (LICENSE, openspec, diagram, .gitignore) precedes PR1.
+    Every PR passes a fresh code review and a fresh security review
+    (blocking on CRITICAL/HIGH) before merge.
+
+capabilities:
+  new:
+    - chat-endpoint
+    - session-identity
+    - rate-limiting
+    - knowledge-base
+    - agent-runtime
+    - infrastructure
+  modified: []
+
+open_questions: []
+
+resolved_in_design:
+  - Region us-east-1; model IDs amazon.nova-micro-v1:0 and amazon.titan-embed-text-v2:0 (1024 dims)
+  - IaC is AWS CDK v2 Python only (L1 constructs); AgentCore starter toolkit rejected
+  - Agent ships as a direct code deployment zip (PYTHON_3_12); no ECR, no Docker
+  - DNS stays at DigitalOcean (CNAME); ACM cert in us-east-1, DNS validation manual; Route 53 not used
+  - Knowledge Base sync is a manual scripts/sync_kb.py StartIngestionJob; re-index has no read outage
+  - AgentCore Runtime has no standing idle fee, but idle memory bills at $0.00945/GB-hour
+  - Response contract {answer, language}; runtimeSessionId = sha256("rt:" + session_id)
+  - Estimated monthly cost approximately USD 0.65 at 1,000 questions/month
+
+carried_risks:
+  - >-
+    Cold-session latency (approximately 6-12 s) exceeds the split p95 target
+    of 10 s only in a worst case; warm requests are 1.2-2.0 s. Smoke test
+    (task 9.3) must report warm and cold latency separately; escalate to the
+    owner if the 10 s cold-start p95 proves unacceptable. Documented fallback
+    is proposal Option C.
+  - Nova Micro may require the us.amazon.nova-micro-v1:0 inference profile; verify before first deploy
+  - Lambda must pin boto3/botocore (bundled version may lack the bedrock-agentcore client)
+  - >-
+    Review Workload Forecast in tasks.md shows High 400-line budget risk;
+    chain strategy is not yet chosen (see blocked_reasons).
+
+owner_confirmation_pending: []
+
+owner_confirmed:
+  - Split latency target: warm p95 < 3.5 s, first-request-of-session p95 < 10 s
+  - Monthly cost ceiling USD 10
+  - Coverage gate 85 % on src/, blocking in CI
+  - Response shape: single-answer object {answer, language}; widget adapts
+  - Manual content updates (S3 upload + KB sync) instead of an automated crawl
+
+docs:
+  - ../portfolio-agent-blog/why-agentcore-and-what-we-keep-out.md
+  - ../portfolio-agent-blog/session-identity-httponly-cookie.md
+  - ../portfolio-agent-blog/what-a-spec-is-and-why-we-write-it-first.md
+  - ../portfolio-agent-blog/designing-the-serverless-gate-and-the-agent.md
+  - ../portfolio-agent-blog/agentcore-cli-vs-cdk.md
+  - ../portfolio-agent-blog/slicing-work-into-reviewable-tasks.md
