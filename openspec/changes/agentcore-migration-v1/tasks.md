@@ -78,7 +78,7 @@ sub-PR if the real diff exceeds ~450 lines; the split points are noted inline be
 
 ## Phase 2: Domain Core — models, hashing, ports, session identity, cookie (PR 2)
 
-- [ ] 2.1 Domain models — `src/api/domain/models.py`: `ChatRequest` (validates
+- [x] 2.1 Domain models — `src/api/domain/models.py`: `ChatRequest` (validates
       non-empty, <=500 chars in `__post_init__`), `Session`, `RateLimitDecision`,
       `AgentAnswer` (frozen dataclasses).
       RED: `tests/unit/domain/test_models.py::test_chat_request_rejects_empty_message`,
@@ -86,13 +86,13 @@ sub-PR if the real diff exceeds ~450 lines; the split points are noted inline be
       GREEN: implement the dataclasses and validation.
       Acceptance: `chat-endpoint` — *Request Contract*, scenarios *Empty message*,
       *Message exceeds length cap*. Est: ~90 lines.
-- [ ] 2.2 Domain errors — `src/api/domain/errors.py`: `ValidationError`,
+- [x] 2.2 Domain errors — `src/api/domain/errors.py`: `ValidationError`,
       `RateLimited(scope, retry_after)`, `UpstreamError`, `UpstreamTimeout`.
       RED: `tests/unit/domain/test_errors.py::test_rate_limited_carries_scope_and_retry_after`.
       GREEN: implement the exception hierarchy.
       Acceptance: `chat-endpoint` — *Upstream Failure Mapping*, *Rate-Limit Surfacing*.
       Est: ~40 lines.
-- [ ] 2.3 Hashing utility — `src/api/domain/hashing.py`: `derive_key(prefix: str, value:
+- [x] 2.3 Hashing utility — `src/api/domain/hashing.py`: `derive_key(prefix: str, value:
       str) -> str` = `sha256(f"{prefix}:{value}").hexdigest()`, reused for `db:`, `rt:`,
       `log:` (sliced to 16), `ip:` per design §4.1 (no salt needed — session id already
       has >=128 bits of entropy).
@@ -100,13 +100,13 @@ sub-PR if the real diff exceeds ~450 lines; the split points are noted inline be
       asserts `derive_key("db", "x") != derive_key("rt", "x")`; `::test_full_sha256_is_64_hex_chars`.
       GREEN: implement. Acceptance: design §4.1 Identity derivation table.
       Est: ~45 lines.
-- [ ] 2.4 Ports — `src/api/ports/{session_store,rate_limiter,agent_client,clock,ids}.py`
+- [x] 2.4 Ports — `src/api/ports/{session_store,rate_limiter,agent_client,clock,ids}.py`
       as `typing.Protocol` classes.
       RED: `tests/unit/ports/test_ports_are_protocols.py` — asserts each port class is a
       `Protocol` with the exact method signatures from design §4.
       GREEN: define the Protocols. Acceptance: design §4 Lambda Module Design.
       Est: ~55 lines.
-- [ ] 2.5 Test fakes — `tests/fakes/{fake_session_store,fake_rate_limiter,
+- [x] 2.5 Test fakes — `tests/fakes/{fake_session_store,fake_rate_limiter,
       fake_agent_client,frozen_clock}.py`, in-memory implementations of the ports above.
       No RED (test infrastructure; exercised by 2.6 and Phase 4 tests).
       Acceptance: design §10 *Unit — use case* testing layer. Est: ~85 lines.
