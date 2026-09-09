@@ -42,9 +42,15 @@ def decide_session(
     header (`session-identity` spec, *Cookie Issuance*).
     """
     if cookie_value is not None and is_valid_session_id_shape(cookie_value):
-        existing = store.get(derive_key("db", cookie_value))
-        if existing is not None and not _is_expired(existing, clock):
-            return existing, False
+        record = store.get(derive_key("db", cookie_value))
+        if record is not None:
+            # Reconstructed from the raw `cookie_value`, never from the store's
+            # record: `SessionRecord` carries no id, so this is the only place
+            # a reused `Session.session_id` can come from. This keeps it equal
+            # to the raw id `create()` returns for a brand-new session.
+            existing = Session(session_id=cookie_value, issued_at=record.issued_at)
+            if not _is_expired(existing, clock):
+                return existing, False
 
     return store.create(), True
 

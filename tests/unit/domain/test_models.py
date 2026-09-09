@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 import pytest
 
 from api.domain.errors import ValidationError
-from api.domain.models import AgentAnswer, ChatRequest, Session
+from api.domain.models import AgentAnswer, ChatRequest, Session, SessionRecord
 
 MAX_MESSAGE_LENGTH = 500
 
@@ -59,3 +59,16 @@ def test_session_rejects_naive_issued_at() -> None:
     """TTL math (session-identity spec, *Fixed Session TTL*) requires a tz-aware instant."""
     with pytest.raises(ValidationError):
         Session(session_id="some-session-id", issued_at=datetime(2026, 9, 9))
+
+
+def test_session_record_rejects_naive_issued_at() -> None:
+    """`SessionRecord` carries no session id — only `issued_at` — but it needs the same
+    tz-aware guard as `Session` for the same TTL-math reason."""
+    with pytest.raises(ValidationError):
+        SessionRecord(issued_at=datetime(2026, 9, 9))
+
+
+def test_session_record_accepts_tz_aware_issued_at() -> None:
+    record = SessionRecord(issued_at=datetime(2026, 9, 9, tzinfo=UTC))
+
+    assert record.issued_at == datetime(2026, 9, 9, tzinfo=UTC)

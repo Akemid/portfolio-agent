@@ -49,6 +49,24 @@ def test_valid_unexpired_cookie_reuses_session_without_new_cookie() -> None:
     assert session == existing
 
 
+def test_reused_session_carries_the_raw_cookie_id_not_the_hash() -> None:
+    """Regression: `SessionStore.get()` returns a `SessionRecord` keyed by the hashed id,
+    which carries no session id at all. `decide_session` must reconstruct the reused
+    `Session` from the raw `cookie_value` it was called with, never from the store's
+    record — so `session.session_id` is always the raw id, matching the `create()` path,
+    and never the hash used as the lookup key.
+    """
+    clock = FrozenClock(ISSUED_AT)
+    store = FakeSessionStore(clock=clock)
+    existing = store.create()
+
+    session, is_new = decide_session(existing.session_id, store, clock)
+
+    assert is_new is False
+    assert session.session_id == existing.session_id
+    assert session.session_id != derive_key("db", existing.session_id)
+
+
 def test_unknown_cookie_silently_issues_fresh_session() -> None:
     clock = FrozenClock(ISSUED_AT)
     store = FakeSessionStore(clock=clock)

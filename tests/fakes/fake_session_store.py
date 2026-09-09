@@ -5,7 +5,7 @@ from __future__ import annotations
 import secrets
 
 from api.domain.hashing import derive_key
-from api.domain.models import Session
+from api.domain.models import Session, SessionRecord
 from api.ports.clock import Clock
 from api.ports.ids import Ids
 
@@ -23,12 +23,12 @@ class FakeSessionStore:
     def __init__(self, clock: Clock, ids: Ids | None = None) -> None:
         self._clock = clock
         self._ids = ids or _RandomIds()
-        self.records: dict[str, Session] = {}
+        self.records: dict[str, SessionRecord] = {}
 
-    def get(self, hashed_id: str) -> Session | None:
+    def get(self, hashed_id: str) -> SessionRecord | None:
         return self.records.get(hashed_id)
 
     def create(self) -> Session:
         session = Session(session_id=self._ids.new_session_id(), issued_at=self._clock.now())
-        self.records[derive_key("db", session.session_id)] = session
+        self.records[derive_key("db", session.session_id)] = SessionRecord(issued_at=session.issued_at)
         return session
