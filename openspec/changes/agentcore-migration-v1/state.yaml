@@ -175,6 +175,8 @@ phases:
         status: implemented_pending_review
         commits:
           - 3a9246f feat(adapters): add DynamoDB session store with system clock and secure ids
+          - 3918147 refactor(session): make SessionStore.get return SessionRecord so session_id is always the raw id
+          - 8d60ec3 refactor(adapters): single-source DynamoDB key shape in dynamo_keys
         tasks_completed: ["3.1"]
         cut: >-
           PR3 (tasks.md Phase 3) = 3.1 (session store) + 3.2/3.3 (rate
@@ -184,14 +186,31 @@ phases:
           PR3a. PR3b (tasks 3.2 session daily cap, 3.3 IP sliding window,
           3.G gate) is the next apply batch, stacked on feat/dynamodb-adapters.
         diff_stat: >-
-          10 files changed, 308 insertions(+) (git diff --stat
-          feat/domain-core-b..feat/dynamodb-adapters, excludes uv.lock)
+          20 files changed, 473 insertions(+), 16 deletions(-) (git diff
+          --stat feat/domain-core-b..feat/dynamodb-adapters, excludes
+          uv.lock; grew from the initial 10-file/308-line 3.1 commit after
+          the SessionStore.get contract fix and dynamo_keys extraction)
         local_gate: >-
-          ruff check clean, ruff format clean, mypy src clean, 72 tests pass
-          (up from 61 baseline).
+          ruff check clean, ruff format clean, mypy src clean, 75 tests pass
+          (up from 61 baseline; 72 after the initial 3.1 commit).
         note: >-
           Strict TDD followed throughout (RED confirmed by
-          ModuleNotFoundError before each GREEN implementation). Deviation:
+          ModuleNotFoundError before each GREEN implementation). Follow-up
+          fix (PR3 code review): the original "hashed id in
+          Session.session_id" deviation below was WRONG -- create() and the
+          fake returned Session.session_id as the RAW id while get()
+          returned it as the HASH, so a caller deriving keys from
+          session.session_id would get different keys for a new vs. reused
+          session. Decision: SessionStore.get returns SessionRecord
+          (issued_at only, no id field at all) instead of a Session with a
+          fabricated id; decide_session reconstructs the reused Session
+          from the raw cookie_value, so session_id always holds the raw id
+          on both paths. DynamoSessionStore.get() now returns SessionRecord
+          and the key-shape literals (pk/sk, SESSION# prefix, META, ttl)
+          were extracted into src/api/adapters/dynamo_keys.py, imported by
+          both the adapter and tests/helpers/dynamodb_schema.py. PR3b's
+          rate limiter (tasks 3.2/3.3) MUST import dynamo_keys instead of
+          re-declaring the key literals. Original (now superseded) note:
           design.md SS4.2 states the raw session id is never written to
           DynamoDB, so DynamoSessionStore.get() cannot return the
           caller-supplied raw id on the Session it produces -- it returns
