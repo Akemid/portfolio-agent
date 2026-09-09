@@ -11,6 +11,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
+import pytest
 from fakes.frozen_clock import FrozenClock
 
 from api.adapters.dynamo_keys import (
@@ -44,10 +45,20 @@ class _CountingTable:
     def __init__(self, table: Any) -> None:
         self._table = table
         self.update_item_calls: list[dict[str, Any]] = []
+        self.get_item_calls: list[dict[str, Any]] = []
+        self.query_calls: list[dict[str, Any]] = []
 
     def update_item(self, **kwargs: Any) -> Any:
         self.update_item_calls.append(kwargs)
         return self._table.update_item(**kwargs)
+
+    def get_item(self, **kwargs: Any) -> Any:
+        self.get_item_calls.append(kwargs)
+        return self._table.get_item(**kwargs)
+
+    def query(self, **kwargs: Any) -> Any:
+        self.query_calls.append(kwargs)
+        return self._table.query(**kwargs)
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._table, name)
@@ -239,3 +250,33 @@ def test_check_and_increment_issues_exactly_one_update_item_call_per_scope(dynam
     limiter.check_and_increment(SESSION_KEY, IP_KEY)
 
     assert len(counting_table.update_item_calls) == 2  # one for IP, one for session
+
+
+def test_ip_window_reads_only_the_previous_bucket_with_get_item(dynamodb_table: Any) -> None:
+    """A point read on the exact previous-minute key is cheaper than a Query and needs no Query IAM permission."""
+    counting_table = _CountingTable(dynamodb_table)
+    limiter = DynamoRateLimiter(table=counting_table, clock=FrozenClock(NOW))
+    prev_minute = NOW.replace(second=0, microsecond=0).replace(minute=NOW.minute - 1)
+
+    limiter.check_and_increment(SESSION_KEY, IP_KEY)
+
+    assert counting_table.query_calls == []
+    assert len(counting_table.get_item_calls) == 1
+    read = counting_table.get_item_calls[0]
+    assert read["Key"] == {PARTITION_KEY: ip_pk(IP_KEY), SORT_KEY: ip_minute_sk(prev_minute)}
+    assert read["ConsistentRead"] is True
+
+
+@pytest.mark.parametrize(("session_key", "ip_key"), [("", IP_KEY), (SESSION_KEY, "")])
+def test_empty_derived_keys_are_rejected_before_touching_the_table(
+    dynamodb_table: Any, session_key: str, ip_key: str
+) -> None:
+    """An empty key would merge unrelated visitors into one shared counter; fail loudly instead."""
+    counting_table = _CountingTable(dynamodb_table)
+    limiter = DynamoRateLimiter(table=counting_table, clock=FrozenClock(NOW))
+
+    with pytest.raises(ValueError):
+        limiter.check_and_increment(session_key, ip_key)
+
+    assert counting_table.update_item_calls == []
+    assert counting_table.get_item_calls == []

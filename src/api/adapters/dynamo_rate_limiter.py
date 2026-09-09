@@ -53,8 +53,6 @@ from decimal import Decimal
 from math import ceil
 from typing import Any
 
-from boto3.dynamodb.conditions import Key  # type: ignore[import-untyped]
-
 from api.adapters.dynamo_keys import (
     PARTITION_KEY,
     SORT_KEY,
@@ -106,7 +104,13 @@ class DynamoRateLimiter:
 
         Checks the IP limit first: if it denies, the session counter is
         never touched.
+
+        Both keys MUST be non-empty derived keys (`derive_key(...)` output). An
+        empty key would collapse unrelated visitors into one shared counter, so
+        it is rejected loudly instead of silently degrading isolation.
         """
+        if not session_key or not ip_key:
+            raise ValueError("rate-limit keys must be non-empty derived keys")
         now = self._clock.now()
         ip_decision = self._check_ip(ip_key, now)
         if not ip_decision.allowed:
@@ -136,12 +140,13 @@ class DynamoRateLimiter:
         curr_sk = ip_minute_sk(curr_minute)
         prev_sk = ip_minute_sk(prev_minute)
 
-        response = self._table.query(
-            KeyConditionExpression=Key(PARTITION_KEY).eq(pk) & Key(SORT_KEY).between(prev_sk, curr_sk),
-        )
-        prev_count = next(
-            (int(item[_COUNT_ATTRIBUTE]) for item in response.get("Items", []) if item[SORT_KEY] == prev_sk), 0
-        )
+        # Point read of the exact previous-minute bucket: cheaper than a Query and
+        # keeps the Lambda IAM policy to Get/Put/UpdateItem. Strongly consistent
+        # because a stale (lower) previous count would inflate the derived limit
+        # right after a burst; the extra half RCU is negligible at portfolio traffic.
+        response = self._table.get_item(Key={PARTITION_KEY: pk, SORT_KEY: prev_sk}, ConsistentRead=True)
+        prev_item = response.get("Item")
+        prev_count = int(prev_item[_COUNT_ATTRIBUTE]) if prev_item else 0
         derived_limit = Decimal(self._ip_minute_limit) - Decimal(prev_count) * (1 - _elapsed_fraction(now))
 
         window_end = curr_minute + timedelta(minutes=1)
