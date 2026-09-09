@@ -172,7 +172,8 @@ phases:
           (system_clock.py) and Ids (secure_ids.py) adapters it depends on,
           and a shared moto table-schema helper
           (tests/helpers/dynamodb_schema.py) for PR3b and PR7 to reuse.
-        status: implemented_pending_review
+        status: pr_open
+        pr_url: https://github.com/Akemid/portfolio-agent/pull/6
         commits:
           - 3a9246f feat(adapters): add DynamoDB session store with system clock and secure ids
           - 3918147 refactor(session): make SessionStore.get return SessionRecord so session_id is always the raw id
@@ -221,6 +222,98 @@ phases:
           HTTP layer (Phase 4) already holds the raw cookie value it
           looked up with. Not yet opened as a PR (no push/PR in this batch,
           per the apply instructions).
+      - pr: PR3b
+        branch: feat/dynamodb-rate-limiter
+        base: feat/dynamodb-adapters
+        scope: >-
+          Phase 3 second half — DynamoDB-backed RateLimiter adapter
+          (src/api/adapters/dynamo_rate_limiter.py): per-session daily cap
+          (task 3.2) and per-IP weighted sliding-window minute cap (task
+          3.3), plus two new key-shape helpers in dynamo_keys.py (ip_pk,
+          session_day_sk, ip_minute_sk).
+        status: implemented_pending_review
+        commits:
+          - f91025c feat(adapters): add IP and session-day key helpers to dynamo_keys
+          - a0e665d "feat(adapters): implement DynamoDB rate limiter (session cap + IP window)"
+        tasks_completed: ["3.2", "3.3"]
+        cut: >-
+          PR3b = tasks 3.2 (session daily cap) + 3.3 (IP sliding window) +
+          3.G (merge gate, intentionally left unchecked — it is a review
+          gate, not an implementation task). Stacked on feat/dynamodb-adapters
+          (PR3a, open as PR #6), per tasks.md's own split note.
+        diff_stat: >-
+          4 files changed, 464 insertions(+) (git diff --stat
+          feat/dynamodb-adapters..feat/dynamodb-rate-limiter, excludes
+          uv.lock)
+        local_gate: >-
+          ruff check clean, ruff format clean, mypy src clean, 91 tests pass
+          (up from 75 baseline), coverage 100% on the touched modules
+          (--cov=src --cov-fail-under=85).
+        note: >-
+          Strict TDD followed throughout (RED confirmed by
+          ModuleNotFoundError/ImportError before each GREEN implementation);
+          both the session cap and the IP window passed their full test
+          suite on the first GREEN attempt, no fix-forward cycle needed.
+          Imported PARTITION_KEY/SORT_KEY/TTL_ATTRIBUTE from dynamo_keys.py
+          per the PR3a carried-forward instruction, never re-declaring the
+          "pk"/"sk"/"ttl" literals.
+
+          Check order: IP checked first, then session -- a single IP counter
+          stops one attacker regardless of how many session cookies they
+          forge, so a denied IP request never touches the session counter
+          (asserted by
+          test_ip_denial_does_not_increment_the_session_counter).
+
+          IP algorithm: design.md SS4.2 explicitly rejects a plain
+          fixed-minute bucket (it permits up to 2x the limit across a
+          minute boundary) in favor of a weighted sliding window: a single
+          Query reads the previous minute's bucket, computes
+          estimate = prev_count * (1 - elapsed_fraction) + curr_count, and
+          the current bucket's conditional UpdateItem is checked against a
+          threshold derived from that estimate
+          (derived_limit = limit - prev_weight) rather than against the
+          raw configured limit. Regression test
+          test_fixed_minute_boundary_burst_is_still_blocked proves this:
+          after 5 requests fill the previous minute, only one extra request
+          leaks through right after the boundary (the unavoidable
+          attribute_not_exists(#c) escape needed to let a brand-new bucket
+          ever be born, since DynamoDB's ConditionExpression grammar has no
+          if_not_exists-style function -- that only exists in
+          UpdateExpression), then the next request in the new bucket is
+          blocked -- unlike a naive fixed-window reset, which would grant a
+          fresh 5.
+
+          TTL grace: session counter TTL = next 00:00 UTC + 300s; IP bucket
+          TTL = bucket start + 180s (design.md SS4.2's own table values).
+          Both are set via `if_not_exists` in the same UpdateExpression as
+          the ADD, so a TTL is written once per item and never overwritten
+          on subsequent increments (asserted by
+          test_session_ttl_is_end_of_day_plus_grace_and_set_only_once).
+
+          No rollback on agent failure (v1): neither counter is
+          decremented if the agent invocation fails after being invoked --
+          documented in the adapter's module docstring as a deliberate
+          simplicity/safety tradeoff (single atomic write per scope, no
+          compensating transaction) accepted at this project's scale.
+
+          Atomicity: exactly one update_item call per scope per
+          check_and_increment, asserted with a counting proxy wrapping the
+          moto table
+          (test_check_and_increment_issues_exactly_one_update_item_call_per_scope).
+
+          Deviation from the orchestrator's suggested port shape: the
+          existing RateLimiter.check_and_increment(session_key, ip_key)
+          port (already hashed keys, unchanged from PR2a) was kept as-is --
+          no port change was needed. Deviation from the orchestrator's
+          suggested condition shape: task 3.2/3.3 in tasks.md (the
+          authoritative task breakdown) specify a conditional UpdateItem
+          with attribute_not_exists(#c) OR #c < :limit, not the simpler
+          always-succeeds-then-compare-count pattern in the initial apply
+          prompt; tasks.md/design.md were followed since they are the
+          project's source of truth. IAM: the Lambda's execution role now
+          also needs dynamodb:Query in addition to GetItem/PutItem/UpdateItem
+          (session store already needed the latter two) -- required for the
+          IP window's read of the previous minute's bucket.
   verify:
     status: pending
     depends_on: [apply]
