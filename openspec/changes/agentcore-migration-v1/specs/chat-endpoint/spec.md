@@ -122,10 +122,17 @@ The system MUST NOT log full message bodies (only a truncated prefix of at most 
 
 ### Requirement: End-to-End Latency Budget
 
-The system SHOULD complete a non-streaming answer, end to end, within a p95 of 3.5 seconds, measured by the post-deploy smoke test.
+The system SHOULD complete a non-streaming answer, end to end, within a p95 of 3.5 seconds for requests in an already warm session, and within a p95 of 10 seconds for the first request of a session (which pays the AgentCore Runtime cold start). The post-deploy smoke test MUST measure and report both populations separately.
 
-#### Scenario: Smoke test latency check
+#### Scenario: Warm-session latency check
 
-- GIVEN the deployed stack
-- WHEN the smoke test sends a representative question
-- THEN the observed p95 latency across smoke-test runs is under 3.5 seconds
+- GIVEN the deployed stack and a session that has already received one answer
+- WHEN the smoke test sends further representative questions in that session
+- THEN the observed p95 latency across those runs is under 3.5 seconds
+
+#### Scenario: First-request latency check
+
+- GIVEN the deployed stack and a brand-new session
+- WHEN the smoke test sends the first question of that session
+- THEN the observed p95 latency across first-request runs is under 10 seconds
+- AND the smoke test reports warm and first-request latencies as separate figures
