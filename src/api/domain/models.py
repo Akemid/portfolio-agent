@@ -58,6 +58,25 @@ class Session:
 
 
 @dataclass(frozen=True)
+class SessionRecord:
+    """A stored session record, as read back from the `SessionStore` (`session-identity`
+    spec, *No PII in Session Records*).
+
+    Deliberately carries no session id, hashed or raw: `SessionStore.get()` looks up a
+    record by its already-known hashed id, so the caller never needs it echoed back, and
+    a store adapter that only ever writes the hash (design.md SS4.2) has no raw id to
+    return in the first place. Reconstructing the caller-facing `Session` — with its raw
+    `session_id` — is the domain's job (`api.domain.session_identity.decide_session`).
+    """
+
+    issued_at: datetime
+
+    def __post_init__(self) -> None:
+        if self.issued_at.tzinfo is None:
+            raise ValidationError("SessionRecord.issued_at must be timezone-aware")
+
+
+@dataclass(frozen=True)
 class RateLimitDecision:
     """The outcome of a rate-limit check (`rate-limiting` spec)."""
 

@@ -17,7 +17,7 @@ from fakes.frozen_clock import FrozenClock
 
 from api.domain.errors import UpstreamError
 from api.domain.hashing import derive_key
-from api.domain.models import AgentAnswer, RateLimitDecision
+from api.domain.models import AgentAnswer, RateLimitDecision, SessionRecord
 
 NOW = datetime(2026, 9, 9, 12, 0, tzinfo=UTC)
 
@@ -34,7 +34,7 @@ def test_fake_session_store_creates_and_retrieves_by_hashed_id() -> None:
 
     session = store.create()
 
-    assert store.get(derive_key("db", session.session_id)) == session
+    assert store.get(derive_key("db", session.session_id)) == SessionRecord(issued_at=session.issued_at)
     assert store.get("some-other-hash-not-in-the-store") is None
 
 

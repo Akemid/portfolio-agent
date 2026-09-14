@@ -139,7 +139,14 @@ sub-PR if the real diff exceeds ~450 lines; the split points are noted inline be
 
 ## Phase 3: DynamoDB Adapters (PR 3)
 
-- [ ] 3.1 Session store adapter — `src/api/adapters/dynamo_session_store.py`: `get`,
+> **Split note (apply batch, 2026-09-09):** the 3.1 diff alone is 308 changed
+> lines (10 files: adapter + table/client wiring + shared moto schema
+> helper). Adding 3.2+3.3 would push the PR past the ~400-line review
+> budget, so this batch stops after 3.1 as **PR3a** (`feat/dynamodb-adapters`,
+> branched from `feat/domain-core-b`). 3.2 and 3.3 become **PR3b**, stacked
+> on top of PR3a, in the next apply batch.
+
+- [x] 3.1 Session store adapter — `src/api/adapters/dynamo_session_store.py`: `get`,
       `create` against table `portfolio-agent-sessions` (`pk=SESSION#<derive_key("db",sid)>`,
       `sk=META`, TTL = issued + 24 h fixed).
       RED: `tests/unit/adapters/test_dynamo_session_store.py::test_get_returns_none_for_unknown_key`,
@@ -147,6 +154,10 @@ sub-PR if the real diff exceeds ~450 lines; the split points are noted inline be
       or `moto`).
       GREEN: implement. Acceptance: `session-identity` — *Fixed Session TTL*, *No PII in
       Session Records*. Est: ~140 lines.
+      Also closes the PR2b apply-progress "Carried" item: production `Clock`
+      (`src/api/adapters/system_clock.py`, `datetime.now(UTC)`) and `Ids`
+      (`src/api/adapters/secure_ids.py`, `secrets.token_urlsafe(32)`) adapters,
+      both required by the session store's constructor.
 - [ ] 3.2 Rate limiter — session daily cap — `src/api/adapters/dynamo_rate_limiter.py`
       (part 1): atomic `UpdateItem` with `ConditionExpression: attribute_not_exists(#c)
       OR #c < :limit` on `SESSION#<hash>/DAY#<utc-date>`, TTL = next 00:00 UTC + 300 s.
