@@ -52,3 +52,7 @@ warn_unused_ignores = true
 [[tool.mypy.overrides]]
 module = "tests.*"
 disallow_untyped_defs = false
+
+[tool.pyright]
+pythonVersion = "3.12"
+extraPaths = ["src", "tests"]

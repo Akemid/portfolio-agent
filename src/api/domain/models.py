@@ -52,6 +52,10 @@ class Session:
     session_id: str = field(repr=False)
     issued_at: datetime
 
+    def __post_init__(self) -> None:
+        if self.issued_at.tzinfo is None:
+            raise ValidationError("Session.issued_at must be timezone-aware")
+
 
 @dataclass(frozen=True)
 class RateLimitDecision:

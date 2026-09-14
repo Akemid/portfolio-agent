@@ -110,7 +110,7 @@ sub-PR if the real diff exceeds ~450 lines; the split points are noted inline be
       fake_agent_client,frozen_clock}.py`, in-memory implementations of the ports above.
       No RED (test infrastructure; exercised by 2.6 and Phase 4 tests).
       Acceptance: design §10 *Unit — use case* testing layer. Est: ~85 lines.
-- [ ] 2.6 Session identity domain logic — `src/api/domain/session_identity.py`:
+- [x] 2.6 Session identity domain logic — `src/api/domain/session_identity.py`:
       `decide_session(cookie_value, store, clock) -> (Session, is_new: bool)`.
       RED: `tests/unit/domain/test_session_identity.py::`
       `test_no_cookie_creates_new_session`,
@@ -120,14 +120,18 @@ sub-PR if the real diff exceeds ~450 lines; the split points are noted inline be
       GREEN: implement using `FakeSessionStore` + `FrozenClock` + `derive_key("db", ...)`.
       Acceptance: `session-identity` — *Cookie Issuance*, *Tamper and Unknown-ID
       Handling*, *Fixed Session TTL*. Est: ~165 lines.
-- [ ] 2.7 Cookie attribute builder — `src/api/http/cookies.py`:
+- [x] 2.7 Cookie attribute builder — `src/api/http/cookies.py`:
       `build_set_cookie_header(session_id) -> str`.
       RED: `tests/unit/http/test_cookies.py::test_cookie_has_all_required_flags` —
       asserts `HttpOnly`, `Secure`, `SameSite=Lax`, `Path=/`, and a fixed 24 h `Max-Age`.
       GREEN: implement. Acceptance: `session-identity` — *Cookie Attributes*.
       Est: ~40 lines.
-- [ ] 2.R **Refactor**: extract any duplicated key-derivation calls in 2.6 into calls to
-      `derive_key` from 2.3; no behavior change, covered by existing tests.
+- [x] 2.R **Refactor**: extract any duplicated key-derivation calls in 2.6 into calls to
+      `derive_key` from 2.3; no behavior change, covered by existing tests. Satisfied by
+      construction: `decide_session`'s GREEN implementation already calls `derive_key("db",
+      ...)` from 2.3, so there was no duplicated hashing logic to extract. The session-id
+      shape-validation regex was still duplicated between 2.6 and 2.7's GREEN steps; extracted
+      to `session_identity.is_valid_session_id_shape` and imported by `http/cookies.py`.
 - [ ] 2.G **Gate**: fresh-context `security-review` + code review before merging PR 2
       (session/cookie logic — high sensitivity). If the real diff exceeds ~450 lines,
       split into PR2a (models/errors/hashing/ports/fakes) and PR2b (session identity +

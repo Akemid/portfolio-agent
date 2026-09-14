@@ -53,3 +53,9 @@ def test_session_repr_does_not_expose_session_id() -> None:
 def test_agent_answer_rejects_unsupported_language() -> None:
     with pytest.raises(ValidationError):
         AgentAnswer(answer="Hi there.", language="fr")
+
+
+def test_session_rejects_naive_issued_at() -> None:
+    """TTL math (session-identity spec, *Fixed Session TTL*) requires a tz-aware instant."""
+    with pytest.raises(ValidationError):
+        Session(session_id="some-session-id", issued_at=datetime(2026, 9, 9))
