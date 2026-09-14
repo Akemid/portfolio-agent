@@ -158,7 +158,7 @@ sub-PR if the real diff exceeds ~450 lines; the split points are noted inline be
       (`src/api/adapters/system_clock.py`, `datetime.now(UTC)`) and `Ids`
       (`src/api/adapters/secure_ids.py`, `secrets.token_urlsafe(32)`) adapters,
       both required by the session store's constructor.
-- [ ] 3.2 Rate limiter — session daily cap — `src/api/adapters/dynamo_rate_limiter.py`
+- [x] 3.2 Rate limiter — session daily cap — `src/api/adapters/dynamo_rate_limiter.py`
       (part 1): atomic `UpdateItem` with `ConditionExpression: attribute_not_exists(#c)
       OR #c < :limit` on `SESSION#<hash>/DAY#<utc-date>`, TTL = next 00:00 UTC + 300 s.
       RED: `tests/unit/adapters/test_dynamo_rate_limiter.py::test_session_cap_allows_9th_and_increments_to_10`,
@@ -167,7 +167,7 @@ sub-PR if the real diff exceeds ~450 lines; the split points are noted inline be
       write occurred).
       GREEN: implement. Acceptance: `rate-limiting` — *Per-Session Daily Cap*, *Counter
       Storage with TTL*. Est: ~150 lines.
-- [ ] 3.3 Rate limiter — IP sliding window — `src/api/adapters/dynamo_rate_limiter.py`
+- [x] 3.3 Rate limiter — IP sliding window — `src/api/adapters/dynamo_rate_limiter.py`
       (part 2): weighted estimate `prev_count * (1 - elapsed_fraction) + curr_count` on
       `IP#<hash>/MIN#<bucket>`, TTL = bucket start + 180 s.
       RED: `::test_ip_cap_allows_4th_request_in_window`,
