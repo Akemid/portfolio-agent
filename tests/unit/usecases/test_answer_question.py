@@ -180,6 +180,25 @@ def test_rate_limiter_receives_derived_session_and_ip_keys() -> None:
     assert limiter.calls == [(derive_key("db", result.session.session_id), derive_key("ip", SOURCE_IP))]
 
 
+def test_denied_decision_without_scope_or_retry_after_raises_value_error() -> None:
+    """Defensive guard: a `RateLimiter` port implementation must never deny without both fields."""
+    clock = FrozenClock(ISSUED_AT)
+    store = FakeSessionStore(clock)
+    limiter = FakeRateLimiter(decisions=[RateLimitDecision(allowed=False)])
+    agent = FakeAgentClient()
+
+    with pytest.raises(ValueError, match="scope and retry_after_seconds"):
+        answer_question(
+            "hello",
+            None,
+            SOURCE_IP,
+            session_store=store,
+            rate_limiter=limiter,
+            agent_client=agent,
+            clock=clock,
+        )
+
+
 def test_agent_client_receives_trimmed_message_and_runtime_session_id() -> None:
     clock = FrozenClock(ISSUED_AT)
     store = FakeSessionStore(clock)
