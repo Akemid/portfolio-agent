@@ -2,7 +2,7 @@ schema: spec-driven
 change: agentcore-migration-v1
 title: AgentCore Migration v1
 created: 2026-09-07
-updated: 2026-09-08
+updated: 2026-09-09
 artifact_store: hybrid
 project: portfolio-agent
 
@@ -70,10 +70,48 @@ phases:
       - pr: PR1
         branch: feat/bootstrap-ci
         scope: Phase 1 bootstrap + CI
-        status: implemented_pending_review
+        status: merged
+        pr_url: https://github.com/Akemid/portfolio-agent/pull/3
         note: >-
           Apply executor stalled after completing Phase 1 commits; orchestrator
-          finished the spec latency alignment and persistence.
+          finished the spec latency alignment and persistence. Merged to main
+          (merge commit c1dd4f1) before this PR2a batch started.
+      - pr: PR2a
+        branch: feat/domain-core-a
+        base: main
+        scope: >-
+          Phase 2 first half — domain models (ChatRequest, AgentAnswer,
+          Session, RateLimitDecision), domain errors, derive_key hashing,
+          the five Protocol ports (SessionStore, RateLimiter, AgentClient,
+          Clock, Ids), and the four in-memory test fakes.
+        status: implemented_pending_review
+        commits:
+          - a3a4add feat(domain): add chat request/answer/session models and domain errors
+          - 02b5690 feat(domain): add derive_key hashing utility
+          - d04d50e feat(ports): add SessionStore, RateLimiter, AgentClient, Clock, Ids protocols
+          - 2bcbbb8 test(fakes): add in-memory port fakes for session store, rate limiter, agent client, clock
+          - 2ab3e3d refactor(domain,ports): tighten docstrings to fit PR2a's review budget
+          - 49a138d test(domain): narrow model tests to required scenarios, drop fakes smoke test
+        tasks_completed: ["2.1", "2.2", "2.3", "2.4", "2.5"]
+        cut: >-
+          PR2a = tasks 2.1-2.5 (models/errors/hashing/ports/fakes), exactly the
+          split point tasks.md's own 2.G gate names. PR2b = tasks 2.6 (session
+          identity domain logic) + 2.7 (cookie attribute builder) + 2.R
+          (refactor) + 2.G (review gate), not started.
+        diff_stat: 19 files changed, 374 insertions(+) (git diff --stat main..feat/domain-core-a, excludes uv.lock)
+        local_gate: >-
+          ruff check clean, ruff format clean, mypy src clean, 31 tests pass,
+          coverage 100% on the touched modules (--cov=src --cov-fail-under=85).
+        note: >-
+          Strict TDD followed throughout (RED confirmed by ImportError before
+          each GREEN implementation). 2.1/2.2 share one RED cycle because
+          ChatRequest's validation raises ValidationError, so domain/errors.py
+          had to exist before domain/models.py's test could even collect.
+          Deviated from the orchestrator's initial line budget: first pass
+          measured 516 changed lines; trimmed non-mandated smoke tests and
+          docstrings down to 374 (tasks.md's own 2.5 note says fakes need "No
+          RED... exercised by 2.6 and Phase 4 tests", so the extra fakes
+          smoke test was dropped, not the fakes themselves).
   verify:
     status: pending
     depends_on: [apply]
