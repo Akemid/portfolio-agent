@@ -91,6 +91,10 @@ class AgentCoreClient:
             raise UpstreamError(_UNAVAILABLE_MESSAGE) from exc
 
     def _parse_answer(self, response: Any) -> AgentAnswer:
+        content_type = response.get("contentType") if isinstance(response, dict) else None
+        if content_type is not None and not content_type.startswith(_CONTENT_TYPE):
+            raise UpstreamError(_UNAVAILABLE_MESSAGE)
+
         try:
             raw_body = response["response"].read()
         except (KeyError, AttributeError, TypeError) as exc:

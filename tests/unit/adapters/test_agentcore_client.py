@@ -198,6 +198,19 @@ def test_streaming_incomplete_read_maps_to_upstream_error() -> None:
         adapter.ask("hello", _RUNTIME_SESSION_ID)
 
 
+def test_unexpected_content_type_raises_upstream_error_before_reading_body() -> None:
+    client = _FakeBotoClient(
+        response={
+            "contentType": "text/event-stream",
+            "response": _FakeStreamingBody(json.dumps({"answer": "hi", "language": "en"}).encode()),
+        }
+    )
+    adapter = AgentCoreClient(client, agent_runtime_arn=_ARN)
+
+    with pytest.raises(UpstreamError):
+        adapter.ask("hello", _RUNTIME_SESSION_ID)
+
+
 def test_client_error_maps_to_upstream_error() -> None:
     error = ClientError({"Error": {"Code": "ThrottlingException", "Message": "slow down"}}, "InvokeAgentRuntime")
     client = _FakeBotoClient(error=error)
