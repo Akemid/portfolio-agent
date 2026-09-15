@@ -24,6 +24,7 @@ dev = [
     "pyyaml==6.0.3",
     "pip-audit==2.10.1",
     "types-pyyaml==6.0.12.20260906",
+    "boto3-stubs[bedrock-agentcore,dynamodb]==1.43.94",
 ]
 
 [tool.uv]

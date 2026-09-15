@@ -237,7 +237,7 @@ sub-PR if the real diff exceeds ~450 lines; the split points are noted inline be
 
 ## Phase 5: AgentCore Adapter, Handler, Contract (PR 5)
 
-- [ ] 5.1 AgentCore client adapter — `src/api/adapters/agentcore_client.py`: boto3
+- [x] 5.1 AgentCore client adapter — `src/api/adapters/agentcore_client.py`: boto3
       `client("bedrock-agentcore")`, `invoke_agent_runtime(runtimeSessionId=derive_key
       ("rt", sid) [64 chars], payload={"prompt": message, "language_hint": None})`.
       RED: `tests/unit/adapters/test_agentcore_client.py::test_runtime_session_id_is_64_hex_chars`,
