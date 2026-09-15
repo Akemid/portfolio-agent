@@ -2,19 +2,24 @@
 
 Covers `agent-runtime` spec (Hosting and Invocation; Invocation Payload
 Contract) and `chat-endpoint` spec (Upstream Failure Mapping). No network:
-`bedrock-agentcore` is faked with a hand-written client double per
-`ArchitecturalConstraint` — botocore's `Stubber` cannot validate the
-streaming response shape for this service model without a real connection.
+most scenarios use a hand-written client double for fast, fine-grained
+control over malformed/edge-case response shapes; the exact wire contract
+(request params, response shape, service errors) is additionally verified
+against botocore's real `bedrock-agentcore` service model with
+`botocore.stub.Stubber` on a real (unconnected) `boto3` client.
 """
 
 from __future__ import annotations
 
+import io
 import json
 import logging
 from typing import Any
 
 import pytest
 from botocore.exceptions import ClientError, ConnectTimeoutError, IncompleteReadError, ReadTimeoutError
+from botocore.response import StreamingBody
+from botocore.stub import Stubber
 
 from api.adapters.agentcore_client import AgentCoreClient, build_agentcore_client
 from api.domain.errors import UpstreamError, UpstreamTimeout
@@ -270,6 +275,66 @@ def test_no_logging_and_no_ids_or_secrets_leaked_on_client_error(caplog: pytest.
     message = str(exc_info.value)
     assert secret_prompt not in message
     assert _RUNTIME_SESSION_ID not in message
+
+
+def _real_client_with_stubber(monkeypatch: pytest.MonkeyPatch) -> tuple[Any, Stubber]:
+    """Build a real (never-connected) `bedrock-agentcore` client wrapped in a
+    `Stubber`. Dummy env credentials avoid resolving real AWS credentials; the
+    `Stubber` intercepts the call before any network I/O happens."""
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "testing")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "testing")
+    monkeypatch.setenv("AWS_SESSION_TOKEN", "testing")
+    client = build_agentcore_client(region="us-east-1")
+    stubber = Stubber(client)
+    stubber.activate()
+    return client, stubber
+
+
+def test_stubber_happy_path_sends_exact_request_params_and_parses_answer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verifies the exact wire contract against the real `bedrock-agentcore`
+    service model (`agent-runtime` spec, *Invocation Payload Contract*;
+    design.md SS6): request params, including that `runtimeSessionId` is
+    forwarded verbatim as the 64-hex-char id the port received, and the
+    streaming response shape.
+    """
+    client, stubber = _real_client_with_stubber(monkeypatch)
+    body_bytes = json.dumps({"answer": "I built X.", "language": "en"}).encode()
+    expected_payload = json.dumps({"prompt": "hello", "language_hint": None}).encode()
+    stubber.add_response(
+        "invoke_agent_runtime",
+        {
+            "response": StreamingBody(io.BytesIO(body_bytes), len(body_bytes)),
+            "contentType": "application/json",
+        },
+        expected_params={
+            "agentRuntimeArn": _ARN,
+            "runtimeSessionId": _RUNTIME_SESSION_ID,
+            "payload": expected_payload,
+            "contentType": "application/json",
+            "accept": "application/json",
+        },
+    )
+    adapter = AgentCoreClient(client, agent_runtime_arn=_ARN)
+
+    result = adapter.ask("hello", _RUNTIME_SESSION_ID)
+
+    assert result == AgentAnswer(answer="I built X.", language="en")
+    assert len(_RUNTIME_SESSION_ID) == 64
+    assert all(c in "0123456789abcdef" for c in _RUNTIME_SESSION_ID)
+    stubber.assert_no_pending_responses()
+
+
+def test_stubber_throttling_client_error_maps_to_upstream_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    client, stubber = _real_client_with_stubber(monkeypatch)
+    stubber.add_client_error("invoke_agent_runtime", service_error_code="ThrottlingException")
+    adapter = AgentCoreClient(client, agent_runtime_arn=_ARN)
+
+    with pytest.raises(UpstreamError):
+        adapter.ask("hello", _RUNTIME_SESSION_ID)
+
+    stubber.assert_no_pending_responses()
 
 
 def test_build_agentcore_client_sets_cost_and_latency_aware_config(monkeypatch: pytest.MonkeyPatch) -> None:
