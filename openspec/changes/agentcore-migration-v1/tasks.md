@@ -183,6 +183,16 @@ sub-PR if the real diff exceeds ~450 lines; the split points are noted inline be
 
 ## Phase 4: Lambda HTTP Layer and Use Case (PR 4)
 
+> **Split applied (PR4a/PR4b)**: the real cut is by AWS-event coupling, not the
+> `4.1-4.2 / 4.3-4.5` split this phase originally suggested. **PR4a** (branch
+> `feat/lambda-http-a`, implemented) = 4.3 (responder) + 4.4 (observability) + 4.5
+> (use case) — pure modules with zero AWS/boto3 imports, depending only on
+> domain/ports. **PR4b** (not yet started) = 4.1 (config, reads `os.environ`) + 4.2
+> (request parser, unwraps the API Gateway v2 event shape) + 4.G, and is expected to
+> fold into the Phase 5 apply batch alongside `handler.py`/`agentcore_client.py`
+> since PR4b alone has no independent value without the composition root. See
+> `state.yaml` batch `PR4a` for the full rationale.
+
 - [ ] 4.1 Config — `src/api/config.py`: frozen `Settings.from_env()` reading
       `RUNTIME_ARN`, `TABLE_NAME`, `SESSION_DAILY_LIMIT`, `IP_MINUTE_LIMIT`,
       `CORS_ALLOWED_ORIGINS`, `AGENT_TIMEOUT_SECONDS`.
@@ -198,7 +208,7 @@ sub-PR if the real diff exceeds ~450 lines; the split points are noted inline be
       GREEN: implement against recorded API Gateway v2 event fixtures.
       Acceptance: `chat-endpoint` — *Request Contract* (*Invalid JSON*); `rate-limiting`
       — *Header spoofing attempt*. Est: ~120 lines.
-- [ ] 4.3 Responder — `src/api/http/responder.py`: domain result -> status code, CORS
+- [x] 4.3 Responder — `src/api/http/responder.py`: domain result -> status code, CORS
       headers, `Set-Cookie`, `Retry-After`.
       RED: `tests/unit/http/test_responder.py::test_success_response_shape`,
       `::test_429_includes_retry_after_and_error_body`,
@@ -207,13 +217,13 @@ sub-PR if the real diff exceeds ~450 lines; the split points are noted inline be
       GREEN: implement. Acceptance: `chat-endpoint` — *Response Contract*, *Rate-Limit
       Surfacing*, *CORS Restriction*, *Upstream Failure Mapping*; `rate-limiting` —
       *429 Response Shape*. Est: ~130 lines.
-- [ ] 4.4 Observability — `src/api/observability.py`: `hash_for_log(sid)` (uses
+- [x] 4.4 Observability — `src/api/observability.py`: `hash_for_log(sid)` (uses
       `derive_key("log", sid)[:16]`), `truncate(msg, 100)`, structured JSON log emitter.
       RED: `tests/unit/test_observability.py::test_hash_for_log_never_equals_raw_id`,
       `::test_truncate_caps_at_100_chars`.
       GREEN: implement. Acceptance: `chat-endpoint` — *Log Redaction* (both scenarios).
       Est: ~55 lines.
-- [ ] 4.5 Use case — `src/api/usecases/answer_question.py`: the single ordered path
+- [x] 4.5 Use case — `src/api/usecases/answer_question.py`: the single ordered path
       validate -> session -> rate limits -> invoke -> map, using only ports.
       RED: `tests/unit/usecases/test_answer_question.py::test_rate_limit_short_circuits_before_invoke`
       (asserts `FakeAgentClient.ask` is never called), `::test_happy_path_calls_ports_in_order`,

@@ -2,7 +2,7 @@ schema: spec-driven
 change: agentcore-migration-v1
 title: AgentCore Migration v1
 created: 2026-09-07
-updated: 2026-09-09
+updated: 2026-09-14
 artifact_store: hybrid
 project: portfolio-agent
 
@@ -84,7 +84,7 @@ phases:
           Session, RateLimitDecision), domain errors, derive_key hashing,
           the five Protocol ports (SessionStore, RateLimiter, AgentClient,
           Clock, Ids), and the four in-memory test fakes.
-        status: pr_open
+        status: merged
         pr_url: https://github.com/Akemid/portfolio-agent/pull/4
         commits:
           - a3a4add feat(domain): add chat request/answer/session models and domain errors
@@ -126,7 +126,7 @@ phases:
           items carried from PR2a's review: the dropped fakes smoke test, a
           tz-aware guard on Session.issued_at, and a [tool.pyright] editor
           config.
-        status: pr_open
+        status: merged
         pr_url: https://github.com/Akemid/portfolio-agent/pull/5
         commits:
           - ec602a6 fix(domain): reject naive issued_at on Session
@@ -172,7 +172,7 @@ phases:
           (system_clock.py) and Ids (secure_ids.py) adapters it depends on,
           and a shared moto table-schema helper
           (tests/helpers/dynamodb_schema.py) for PR3b and PR7 to reuse.
-        status: pr_open
+        status: merged
         pr_url: https://github.com/Akemid/portfolio-agent/pull/6
         commits:
           - 3a9246f feat(adapters): add DynamoDB session store with system clock and secure ids
@@ -231,7 +231,8 @@ phases:
           (task 3.2) and per-IP weighted sliding-window minute cap (task
           3.3), plus two new key-shape helpers in dynamo_keys.py (ip_pk,
           session_day_sk, ip_minute_sk).
-        status: implemented_pending_review
+        status: merged
+        pr_url: https://github.com/Akemid/portfolio-agent/pull/7
         commits:
           - f91025c feat(adapters): add IP and session-day key helpers to dynamo_keys
           - a0e665d "feat(adapters): implement DynamoDB rate limiter (session cap + IP window)"
@@ -314,6 +315,87 @@ phases:
           also needs dynamodb:Query in addition to GetItem/PutItem/UpdateItem
           (session store already needed the latter two) -- required for the
           IP window's read of the previous minute's bucket.
+      - pr: PR4a
+        branch: feat/lambda-http-a
+        base: main
+        scope: >-
+          Phase 4 first half — the pure chat use case
+          (src/api/usecases/answer_question.py: validate -> session -> rate
+          limits -> invoke -> map) and the HTTP response-building half of the
+          Lambda gate (src/api/http/responder.py: domain result/error ->
+          status code, CORS headers, Set-Cookie, Retry-After) plus the log
+          redaction helpers (src/api/observability.py: hash_for_log,
+          truncate). Zero AWS/boto3 imports (grep-verified).
+        status: implemented_pending_review
+        commits:
+          - 94bb453 refactor(domain): unify rate-limit retry naming and type AgentAnswer.language
+          - b6ba3c7 feat(observability): add log-redaction helpers hash_for_log and truncate
+          - f1d538c feat(usecases): add answer_question chat pipeline
+          - b6c1196 feat(http): add responder to map chat results and errors to HTTP responses
+          - 093df1b test(usecases): cover the RateLimiter denial invariant guard branch
+        tasks_completed: ["4.3", "4.4", "4.5"]
+        cut: >-
+          Deviated from the orchestrator's initial 4a/4b description (which
+          paired the use case with "request parsing/response building
+          helpers" broadly and put the Lambda handler + composition root in
+          4b) and from tasks.md's own 4.G note (which suggested splitting
+          4.1-4.2 from 4.3-4.5). Neither matched design.md SS4's module table
+          cleanly: `src/api/handler.py` and the AgentCore adapter are not
+          Phase 4 tasks at all -- tasks.md titles Phase 5 "AgentCore Adapter,
+          Handler, Contract (PR 5)". The cut actually applied is by AWS-event
+          coupling: PR4a = tasks 4.3 (responder) + 4.4 (observability) + 4.5
+          (use case) -- pure, zero-AWS-import modules depending only on
+          domain/ports, matching the use case's own design.md contract
+          ("depends on ports only"). PR4b = task 4.1 (config.py, which reads
+          os.environ) + task 4.2 (request_parser.py, which unwraps the API
+          Gateway v2 event shape: event.body, event.cookies,
+          requestContext.http.sourceIp) + task 4.G's merge gate, and is
+          expected to fold into the Phase 5 apply batch alongside
+          handler.py/agentcore_client.py since PR4b alone is small
+          (~165 estimated lines) and has no independent value without the
+          composition root that wires it together. Recorded here so
+          sdd-verify checks tasks 4.3-4.5 against this PR, not the full
+          Phase 4 list.
+        diff_stat: >-
+          11 files changed, 567 insertions(+), 8 deletions(-) (git diff
+          --stat main..feat/lambda-http-a, excludes uv.lock; src/ only:
+          185 insertions(+), 5 deletions(-) across 6 files)
+        local_gate: >-
+          ruff check clean, ruff format clean, mypy src clean, 120 tests pass
+          (up from 94 baseline), coverage 100% on every touched module
+          (--cov=src --cov-fail-under=85; project total 100.00%).
+        note: >-
+          Strict TDD followed throughout (RED confirmed by
+          ModuleNotFoundError/TypeError before each GREEN implementation,
+          including a safety-net full-suite run before the two domain
+          refactors). Carried cleanup items from PR3b's apply-progress
+          resolved here: `AgentAnswer.language` is now typed `Language`
+          (Literal["en","es"]) instead of `str`; `RateLimited.retry_after`
+          renamed to `retry_after_seconds` to match
+          `RateLimitDecision.retry_after_seconds`, so `answer_question` never
+          juggles two names for the same value. The use case raises
+          `RateLimited`/propagates `UpstreamError`/`UpstreamTimeout` as typed
+          domain errors -- it does not know about HTTP status codes; `error_response`
+          in responder.py owns all status-code mapping (400/429/502/504,
+          generic 500 fallback for any other exception type) so the
+          hexagonal dependency arrow (`http -> usecases -> ports`) is never
+          violated. `success_response` sets `Set-Cookie` only when
+          `AnswerResult.session_is_new` is true, reusing the existing
+          `build_set_cookie_header` from PR2b rather than re-deriving cookie
+          attributes. `cors_headers` always sets `Vary: Origin` (response
+          content depends on the request's `Origin`) and only echoes
+          `Access-Control-Allow-Origin`/`-Credentials` for an allowlisted
+          origin, per `chat-endpoint` spec *CORS Restriction*. Deliberately
+          did NOT add a "structured JSON log event builder" mentioned in the
+          orchestrator's expected-content note: no caller exists yet in PR4a
+          (the composition root that would call it is Phase 5), and adding
+          untested production code would violate strict TDD's "no code
+          before a failing test" rule; `hash_for_log`/`truncate` are ready
+          for Phase 5 to compose into a log line. PRs #1-#7 (Phases 1-3) are
+          confirmed merged to main as of this batch; their `status` fields
+          above are updated from `pr_open` to `merged` accordingly (PR3b's
+          merge PR is inferred as #7, next in the observed sequence, since
+          its apply-progress note never recorded a PR URL before merging).
   verify:
     status: pending
     depends_on: [apply]
