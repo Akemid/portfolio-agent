@@ -278,7 +278,22 @@ def test_build_agentcore_client_sets_cost_and_latency_aware_config(monkeypatch: 
     config = captured["config"]
     assert config.connect_timeout == 3.0
     assert config.read_timeout == 12.0
-    assert config.retries == {"max_attempts": 1}
+    assert config.retries == {"total_max_attempts": 1, "mode": "standard"}
+
+
+def test_build_agentcore_client_resolves_to_exactly_one_total_attempt() -> None:
+    """botocore normalizes `retries={"max_attempts": N}` to `total_max_attempts = N + 1`
+    (client-config `max_attempts` always means *retry* attempts, on top of the initial
+    call) regardless of retry mode -- so `max_attempts=1` alone resolves to 2 total
+    attempts, not 1. Only an explicit `total_max_attempts=1` (with `mode="standard"`,
+    which is what actually honors it) resolves to a single, non-retried attempt. This
+    builds a real `boto3` client (no network call — construction is local) and asserts
+    on the *resolved* `client.meta.config.retries`, not on the `Config` we pass in.
+    """
+    client = build_agentcore_client(region="us-east-1")
+
+    assert client.meta.config.retries["total_max_attempts"] == 1
+    assert client.meta.config.retries["mode"] == "standard"
 
 
 def test_build_agentcore_client_accepts_custom_timeouts(monkeypatch: pytest.MonkeyPatch) -> None:

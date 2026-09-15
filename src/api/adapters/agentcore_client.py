@@ -28,11 +28,14 @@ _TIMEOUT_MESSAGE = "the agent did not respond in time"
 # Cost- and latency-aware defaults (design.md SS7 RQ-5): the AgentCore invocation
 # is the single most expensive and slowest call in the request path, so a client
 # retry would both double the token spend for one visitor question and risk
-# blowing the end-to-end p95 budget. `max_attempts=1` means "no automatic retry" —
-# the use case's own error mapping is the only retry surface, and there is none.
+# blowing the end-to-end p95 budget. `total_max_attempts=1` means "no automatic
+# retry" — the use case's own error mapping is the only retry surface, and there
+# is none. `total_max_attempts` (standard retry mode) counts the initial call
+# plus retries, unlike the legacy-mode `max_attempts` key, which counts retries
+# only and would need `max_attempts=0` for the same "no retry" effect.
 _DEFAULT_CONNECT_TIMEOUT_SECONDS = 3.0
 _DEFAULT_READ_TIMEOUT_SECONDS = 12.0
-_DEFAULT_MAX_ATTEMPTS = 1
+_DEFAULT_TOTAL_MAX_ATTEMPTS = 1
 
 
 class AgentCoreClient:
@@ -120,13 +123,13 @@ def build_agentcore_client(
     invocation at ~6-12s, and this must stay comfortably under both the Lambda
     function timeout and the API Gateway HTTP API integration timeout (30s) —
     the composition root's own timeout is set with headroom above this value.
-    Retries are disabled (`max_attempts=1`): retrying a non-idempotent, billed
-    agent invocation would double cost per question, which the design's cost
-    ceiling (SS7) explicitly guards against.
+    Retries are disabled (`total_max_attempts=1`, standard mode): retrying a
+    non-idempotent, billed agent invocation would double cost per question,
+    which the design's cost ceiling (SS7) explicitly guards against.
     """
     config = Config(
         connect_timeout=connect_timeout,
         read_timeout=read_timeout,
-        retries={"max_attempts": _DEFAULT_MAX_ATTEMPTS},
+        retries={"total_max_attempts": _DEFAULT_TOTAL_MAX_ATTEMPTS, "mode": "standard"},
     )
     return boto3.client("bedrock-agentcore", region_name=region, config=config)
