@@ -34,7 +34,7 @@ class AgentAnswer:
     """The agent's response, ready to be serialized as `{"answer", "language"}`."""
 
     answer: str
-    language: str
+    language: Language
 
     def __post_init__(self) -> None:
         if self.language not in SUPPORTED_LANGUAGES:

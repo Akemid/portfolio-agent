@@ -12,12 +12,16 @@ class ValidationError(DomainError):
 
 
 class RateLimited(DomainError):
-    """Raised when a rate limit has been exceeded. `scope` is `"session"` or `"ip"`."""
+    """Raised when a rate limit has been exceeded. `scope` is `"session"` or `"ip"`.
 
-    def __init__(self, scope: str, retry_after: int) -> None:
-        super().__init__(f"rate limit exceeded for scope={scope!r}, retry_after={retry_after}s")
+    Field name matches `RateLimitDecision.retry_after_seconds` (design.md §4) so
+    callers never have to remember two names for the same value.
+    """
+
+    def __init__(self, scope: str, retry_after_seconds: int) -> None:
+        super().__init__(f"rate limit exceeded for scope={scope!r}, retry_after_seconds={retry_after_seconds}s")
         self.scope = scope
-        self.retry_after = retry_after
+        self.retry_after_seconds = retry_after_seconds
 
 
 class UpstreamError(DomainError):
