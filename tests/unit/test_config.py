@@ -69,6 +69,14 @@ def test_overrides_are_read_from_env() -> None:
     assert settings.log_level == "DEBUG"
 
 
+def test_allowed_origins_falls_back_to_default_when_only_commas_and_whitespace() -> None:
+    env = {**_REQUIRED_ENV, "ALLOWED_ORIGINS": " , , "}
+
+    settings = Settings.from_env(env)
+
+    assert settings.allowed_origins == ("https://sergiomondragon.com",)
+
+
 def test_bad_session_daily_limit_raises_config_error() -> None:
     env = {**_REQUIRED_ENV, "SESSION_DAILY_LIMIT": "not-a-number"}
 
@@ -81,6 +89,13 @@ def test_bad_ip_minute_limit_raises_config_error() -> None:
 
     with pytest.raises(ConfigError):
         Settings.from_env(env)
+
+
+@pytest.mark.parametrize("value", ["true", "1", "yes", "on", "TRUE"])
+def test_cookie_secure_accepts_truthy_string_values(value: str) -> None:
+    settings = Settings.from_env({**_REQUIRED_ENV, "COOKIE_SECURE": value})
+
+    assert settings.cookie_secure is True
 
 
 def test_bad_cookie_secure_raises_config_error() -> None:
