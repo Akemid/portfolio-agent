@@ -201,6 +201,27 @@ wheels = [
 ]
 
 [[package]]
+name = "boto3-stubs"
+version = "1.43.94"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "botocore-stubs" },
+    { name = "types-s3transfer" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/6a/07/0ebb7c439b8fcaab3edffa0e9c0b10e64b225cb3110bb574fb8ccd6e3aed/boto3_stubs-1.43.94.tar.gz", hash = "sha256:5d173ef6552697eba1a79d3381069407b277e3c2a8d9771fa6982c243731ce4a", size = 104622, upload-time = "2026-09-14T22:12:44.85Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/cf/e1/9b915e0dc4a00a00cec37b9fca8c8295dd584af92aba3fa4debd5e7b91ee/boto3_stubs-1.43.94-py3-none-any.whl", hash = "sha256:2c80701e523c68b4ea146f91d17f63893a9f92c4abb46dee89bd64a2928eb36e", size = 71510, upload-time = "2026-09-14T22:12:41.659Z" },
+]
+
+[package.optional-dependencies]
+bedrock-agentcore = [
+    { name = "mypy-boto3-bedrock-agentcore" },
+]
+dynamodb = [
+    { name = "mypy-boto3-dynamodb" },
+]
+
+[[package]]
 name = "botocore"
 version = "1.43.90"
 source = { registry = "https://pypi.org/simple" }
@@ -212,6 +233,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/6b/3e/29872261075d878581a31e9e98c512c0b85322a36e6d6784b9f0694a918d/botocore-1.43.90.tar.gz", hash = "sha256:a139ed601e8b8fb1d730022355fe2b284b8c15cfe9ac0f100254a35d2273e1d3", size = 16081908, upload-time = "2026-09-08T19:22:25.645Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f6/b8/65cbd0d65553c3e51d27159de4c74308ea008c652b05ed3f830f32667efb/botocore-1.43.90-py3-none-any.whl", hash = "sha256:65f3394ef07314e45c92a90120988531d651136390d464a94938a92f665893f7", size = 15775313, upload-time = "2026-09-08T19:22:22.713Z" },
+]
+
+[[package]]
+name = "botocore-stubs"
+version = "1.43.67"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/3f/45/53d662227dc4787b2c854445ee7eb4751cb5d74cfb5c686a6ecbe1f94c17/botocore_stubs-1.43.67.tar.gz", hash = "sha256:853e74014a1f557055c4ffae5fb38d7c65c7c0520e1aab366cac41d5428f419d", size = 42846, upload-time = "2026-08-08T14:57:53.412Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4e/5e/bdbf19967898a032292da65a47d6e25b2eee55865db4e687f861d80b5602/botocore_stubs-1.43.67-py3-none-any.whl", hash = "sha256:c51262bac3341c1cda71f05fa01141fffd3990d7a92c7960e3b755c1bc830373", size = 67244, upload-time = "2026-08-08T14:57:52.01Z" },
 ]
 
 [[package]]
@@ -1242,6 +1272,24 @@ wheels = [
 ]
 
 [[package]]
+name = "mypy-boto3-bedrock-agentcore"
+version = "1.43.88"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/6c/ef/d04a1ea4caa646ce652c016f96a6a63e4abaf141eaf392580aa11a9757da/mypy_boto3_bedrock_agentcore-1.43.88.tar.gz", hash = "sha256:4af2183c998ab3d4f57a3cc401e9449ff5365189a2ca9f78615bd618bf441916", size = 55495, upload-time = "2026-09-03T19:51:50.499Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f1/37/61f8fe7d386c6f784f800525e89bf30e771fc3b80eefc3a2c5fa6a6d6d03/mypy_boto3_bedrock_agentcore-1.43.88-py3-none-any.whl", hash = "sha256:3f297beefa880be36ee44696ab359362362388e5a4840f55e0c76f5676bbf4e9", size = 62641, upload-time = "2026-09-03T19:51:49.181Z" },
+]
+
+[[package]]
+name = "mypy-boto3-dynamodb"
+version = "1.43.64"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/26/7b/6a7649813c7c367c405182d70d5fc4ff5fc531a8d5b0d4d08fa68276ba7c/mypy_boto3_dynamodb-1.43.64.tar.gz", hash = "sha256:8597ddd7d5f92cf00e7aa0875993e5cf09988f017eef41b94d47c08e7675b5d0", size = 50088, upload-time = "2026-08-04T21:37:37.911Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/49/3a/34904b687c40e88f004df3ae010d4d64093dab6506eafc9f6f322ef8eeb6/mypy_boto3_dynamodb-1.43.64-py3-none-any.whl", hash = "sha256:74f59f05544e7682bd2ee284fea9dc859d6ca5984f60f80c0ac54aa744115ead", size = 60304, upload-time = "2026-08-04T21:37:34.946Z" },
+]
+
+[[package]]
 name = "mypy-extensions"
 version = "1.1.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1432,6 +1480,7 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "boto3-stubs", extra = ["bedrock-agentcore", "dynamodb"] },
     { name = "moto", extra = ["dynamodb"] },
     { name = "mypy" },
     { name = "pip-audit" },
@@ -1453,6 +1502,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "boto3-stubs", extras = ["bedrock-agentcore", "dynamodb"], specifier = "==1.43.94" },
     { name = "moto", extras = ["dynamodb"], specifier = "==5.2.3" },
     { name = "mypy", specifier = "==2.3.1" },
     { name = "pip-audit", specifier = "==2.10.1" },
@@ -2076,6 +2126,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/90/6e/abec85b9013db5b934b0280a6dd104904d84f7bcbaab2e2f3def87ac7463/types_pyyaml-6.0.12.20260906.tar.gz", hash = "sha256:f59c1cc05010b833d2d72287bbaa72610106b28d42d89a907313117faba85212", size = 18649, upload-time = "2026-09-06T06:35:35.362Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/15/c0/fc0644b7ddcfb969e95845837143cb5173ddd6e06ee4ba5fc493cd9329b7/types_pyyaml-6.0.12.20260906-py3-none-any.whl", hash = "sha256:bca893ff0d51df5c9053137d5d0e6ccd36e939a196356f1d5c16372422f5137b", size = 21282, upload-time = "2026-09-06T06:35:34.372Z" },
+]
+
+[[package]]
+name = "types-s3transfer"
+version = "0.16.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/fe/64/42689150509eb3e6e82b33ee3d89045de1592488842ddf23c56957786d05/types_s3transfer-0.16.0.tar.gz", hash = "sha256:b4636472024c5e2b62278c5b759661efeb52a81851cde5f092f24100b1ecb443", size = 13557, upload-time = "2025-12-08T08:13:09.928Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/98/27/e88220fe6274eccd3bdf95d9382918716d312f6f6cef6a46332d1ee2feff/types_s3transfer-0.16.0-py3-none-any.whl", hash = "sha256:1c0cd111ecf6e21437cb410f5cddb631bfb2263b77ad973e79b9c6d0cb24e0ef", size = 19247, upload-time = "2025-12-08T08:13:08.426Z" },
 ]
 
 [[package]]

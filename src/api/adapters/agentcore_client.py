@@ -9,7 +9,7 @@ Usage example: https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/run
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import boto3
 from botocore.config import Config
@@ -17,6 +17,9 @@ from botocore.exceptions import BotoCoreError, ClientError, ConnectTimeoutError,
 
 from api.domain.errors import UpstreamError, UpstreamTimeout
 from api.domain.models import SUPPORTED_LANGUAGES, AgentAnswer
+
+if TYPE_CHECKING:
+    from mypy_boto3_bedrock_agentcore import BedrockAgentCoreClient
 
 _CONTENT_TYPE = "application/json"
 
@@ -46,7 +49,7 @@ class AgentCoreClient:
     adapters depend on ports, the composition root wires the SDK).
     """
 
-    def __init__(self, client: Any, agent_runtime_arn: str, qualifier: str | None = None) -> None:
+    def __init__(self, client: BedrockAgentCoreClient, agent_runtime_arn: str, qualifier: str | None = None) -> None:
         self._client = client
         self._agent_runtime_arn = agent_runtime_arn
         self._qualifier = qualifier
@@ -120,7 +123,7 @@ def build_agentcore_client(
     region: str,
     connect_timeout: float = _DEFAULT_CONNECT_TIMEOUT_SECONDS,
     read_timeout: float = _DEFAULT_READ_TIMEOUT_SECONDS,
-) -> Any:
+) -> BedrockAgentCoreClient:
     """Build a boto3 `bedrock-agentcore` client with a cost- and latency-aware `Config`.
 
     Not called at import time — the composition root (a later batch) calls this
