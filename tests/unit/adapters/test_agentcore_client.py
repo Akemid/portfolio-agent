@@ -14,7 +14,7 @@ import logging
 from typing import Any
 
 import pytest
-from botocore.exceptions import ClientError, ConnectTimeoutError, ReadTimeoutError
+from botocore.exceptions import ClientError, ConnectTimeoutError, IncompleteReadError, ReadTimeoutError
 
 from api.adapters.agentcore_client import AgentCoreClient, build_agentcore_client
 from api.domain.errors import UpstreamError, UpstreamTimeout
@@ -33,6 +33,17 @@ class _FakeStreamingBody:
 
     def read(self) -> bytes:
         return self._data
+
+
+class _RaisingStreamingBody:
+    """A streaming body whose `.read()` raises mid-stream, as botocore's real
+    `StreamingBody` can (`ReadTimeoutError`, `IncompleteReadError`, etc.)."""
+
+    def __init__(self, error: Exception) -> None:
+        self._error = error
+
+    def read(self) -> bytes:
+        raise self._error
 
 
 class _FakeBotoClient:
@@ -154,6 +165,30 @@ def test_non_object_json_body_raises_upstream_error() -> None:
 
 def test_response_missing_body_key_raises_upstream_error() -> None:
     client = _FakeBotoClient(response={"contentType": "application/json"})
+    adapter = AgentCoreClient(client, agent_runtime_arn=_ARN)
+
+    with pytest.raises(UpstreamError):
+        adapter.ask("hello", _RUNTIME_SESSION_ID)
+
+
+def test_streaming_read_timeout_maps_to_upstream_timeout_without_leaking_endpoint() -> None:
+    body_error = ReadTimeoutError(endpoint_url="https://should-not-leak.example")
+    client = _FakeBotoClient(
+        response={"contentType": "application/json", "response": _RaisingStreamingBody(body_error)}
+    )
+    adapter = AgentCoreClient(client, agent_runtime_arn=_ARN)
+
+    with pytest.raises(UpstreamTimeout) as exc_info:
+        adapter.ask("hello", _RUNTIME_SESSION_ID)
+
+    assert "should-not-leak.example" not in str(exc_info.value)
+
+
+def test_streaming_incomplete_read_maps_to_upstream_error() -> None:
+    body_error = IncompleteReadError(actual_bytes=5, expected_bytes=10)
+    client = _FakeBotoClient(
+        response={"contentType": "application/json", "response": _RaisingStreamingBody(body_error)}
+    )
     adapter = AgentCoreClient(client, agent_runtime_arn=_ARN)
 
     with pytest.raises(UpstreamError):

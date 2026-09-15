@@ -74,12 +74,15 @@ class AgentCoreClient:
 
         try:
             response = self._client.invoke_agent_runtime(**kwargs)
+            return self._parse_answer(response)
         except (ReadTimeoutError, ConnectTimeoutError) as exc:
+            # Covers both the initial call and `StreamingBody.read()`, which can raise
+            # the same timeout errors mid-stream once the response has started.
             raise UpstreamTimeout(_TIMEOUT_MESSAGE) from exc
         except (ClientError, BotoCoreError) as exc:
+            # Covers both the initial call and any other `BotoCoreError` raised while
+            # reading the streaming body (e.g. `IncompleteReadError`, `ResponseStreamingError`).
             raise UpstreamError(_UNAVAILABLE_MESSAGE) from exc
-
-        return self._parse_answer(response)
 
     def _parse_answer(self, response: Any) -> AgentAnswer:
         try:
