@@ -418,7 +418,10 @@ phases:
           main..feat/agentcore-adapter, excludes uv.lock; 129 lines in
           agentcore_client.py + 4 in pyproject.toml = 133 code lines
           excluding tests, well under the 350-line PR5 budget)
-        local_gate: "ruff check clean, ruff format clean, mypy src clean, 113 tests pass, coverage 100%."
+        local_gate: >-
+          ruff check clean, ruff format clean, mypy src clean, 113 tests
+          pass, coverage 100% (pre-review-fixes baseline); after the
+          review_fixes commits below: 119 tests pass, same gate clean.
         boto3_service_model_check: >-
           PASS — `uv run python -c "import boto3; boto3.client('bedrock-agentcore',
           region_name='us-east-1')"` succeeds with the pinned boto3==1.43.90;
@@ -475,6 +478,54 @@ phases:
           `language` outside `SUPPORTED_LANGUAGES`, mapping all of these to
           the same generic `UpstreamError` — never echoing the malformed
           body back to the caller.
+        review_fixes: >-
+          PR5 code review findings addressed test-first (RED confirmed
+          before each GREEN), one commit per finding group on
+          feat/agentcore-adapter:
+          ba55376 (BLOCKER — StreamingBody.read() now runs inside the
+          same invoke_agent_runtime try/except, so ReadTimeoutError maps
+          to UpstreamTimeout and any other BotoCoreError, e.g.
+          IncompleteReadError, maps to UpstreamError, mid-stream);
+          61ef22a (MAJOR — retries; see retries_correction below,
+          superseding the original timeouts_chosen.retries_max_attempts
+          note);
+          f9df5d3 (MAJOR — payload now sends
+          {"prompt": ..., "language_hint": null} per design.md SS6);
+          b49dea4 (MAJOR — added botocore.stub.Stubber tests against a
+          real, unconnected bedrock-agentcore client: happy path with
+          exact expected_params incl. verbatim runtimeSessionId, and a
+          ThrottlingException case; removed the module docstring's false
+          claim that Stubber can't validate this service model's
+          streaming response — verified empirically that it can);
+          5105926 (MINOR — reject a response contentType that doesn't
+          start with application/json, before reading the body);
+          e7e47d4 (MINOR/typing — boto3-stubs[bedrock-agentcore,dynamodb]
+          resolved cleanly; removed the blanket
+          [[tool.mypy.overrides]] for boto3.*/botocore.*, mypy src stays
+          clean, and AgentCoreClient's client param / build_agentcore_client's
+          return type are now BedrockAgentCoreClient under TYPE_CHECKING).
+          NIT (runtimeSessionId sent verbatim, 64 hex chars) covered by
+          the new Stubber happy-path test's expected_params equality
+          check, no separate commit needed.
+        retries_correction: >-
+          The review's suggested fix text
+          (`retries={"max_attempts": 1, "mode": "standard"}`) does NOT
+          resolve to 1 total attempt — verified empirically with a real
+          client: botocore's args.py always normalizes a client-config
+          `max_attempts` key to `total_max_attempts = max_attempts + 1`
+          (it means retry attempts, not total attempts), in BOTH legacy
+          and standard mode. `max_attempts=1` therefore resolves to
+          `total_max_attempts=2` regardless of mode — this is the exact
+          bug being fixed, so the review's literal suggested config would
+          not have fixed it. The correct fix, and what was implemented,
+          is `retries={"total_max_attempts": 1, "mode": "standard"}`,
+          which resolves to `client.meta.config.retries ==
+          {"total_max_attempts": 1, "mode": "standard"}` (asserted on a
+          real, unconnected boto3 client — construction needs no network
+          call or credentials). This supersedes the earlier
+          timeouts_chosen.retries_max_attempts: 1 note above, which
+          described intent correctly but not the config shape needed to
+          achieve it.
   verify:
     status: pending
     depends_on: [apply]
