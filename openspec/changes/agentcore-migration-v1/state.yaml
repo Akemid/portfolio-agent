@@ -409,7 +409,8 @@ phases:
           the AgentClient port over an injected boto3 bedrock-agentcore
           client's invoke_agent_runtime, plus build_agentcore_client, a
           factory for a cost- and latency-aware botocore Config.
-        status: implemented_pending_review
+        status: pr_open
+        pr_url: https://github.com/Akemid/portfolio-agent/pull/9
         commits:
           - 548521a feat(adapters): add AgentCore client adapter for InvokeAgentRuntime
         tasks_completed: ["5.1"]
@@ -526,6 +527,104 @@ phases:
           timeouts_chosen.retries_max_attempts: 1 note above, which
           described intent correctly but not the config shape needed to
           achieve it.
+      - pr: PR5b
+        branch: feat/lambda-handler
+        base: feat/agentcore-adapter
+        scope: >-
+          Lambda HTTP layer's remaining tasks (4.1 config, 4.2 request
+          parser) folded together with Phase 5's handler/composition root
+          (5.2) and its error-mapping seam test (5.4), per the PR boundary
+          recorded on PR4a and PR5. Task 5.3 (cross-phase payload contract
+          test) is deferred — see cut note below.
+        status: implemented_pending_review
+        commits:
+          - fa1ab7f feat(config): add Settings.from_env for Lambda configuration
+          - a413c47 feat(http): add request_parser for API Gateway v2 events
+          - a59485d feat(http): make Set-Cookie Secure flag configurable in success_response
+          - 5467ede feat(handler): add Lambda composition root and error-mapping seam test
+        tasks_completed: ["4.1", "4.2", "5.2", "5.4"]
+        cut: >-
+          Task 5.3 (tests/contract/test_payload_contract.py) is deferred to
+          the apply batch that lands Phase 6 (the Strands agent entrypoint):
+          tasks.md's own RED note already marks 5.3 as a cross-phase pending
+          test, skip-marked until Phase 6 exists on the other side of the
+          contract, and src-only code in this batch (config.py 97 +
+          request_parser.py 101 + responder.py +12/-2 + handler.py 171 =
+          379 lines) was already near the ~420-line PR5 budget. Recorded
+          inline in tasks.md next to task 5.3.
+        diff_stat: >-
+          11 files changed, 989 insertions(+), 6 deletions(-) (git diff
+          --stat feat/agentcore-adapter..feat/lambda-handler, excludes
+          uv.lock; src/ only: 4 files changed, 379 insertions(+), 2
+          deletions(-))
+        local_gate: >-
+          ruff check clean, ruff format clean, mypy src clean, 192 tests
+          pass (up from 119 baseline on feat/agentcore-adapter), coverage
+          100.00% (--cov=src --cov-fail-under=85).
+        env_vars:
+          - "TABLE_NAME (required)"
+          - "AGENT_RUNTIME_ARN (required)"
+          - "AGENT_QUALIFIER (optional, default unset)"
+          - "AWS_REGION (default us-east-1)"
+          - "ALLOWED_ORIGINS (comma-separated, default https://sergiomondragon.com)"
+          - "SESSION_DAILY_LIMIT (default 10)"
+          - "IP_MINUTE_LIMIT (default 5)"
+          - "COOKIE_SECURE (default true)"
+          - "LOG_LEVEL (default INFO)"
+        lambda_timeout_recommendation: >-
+          Set the Lambda function timeout (PR8's api_stack.py) above the
+          AgentCoreClient's 12s read_timeout (PR5) with headroom for cold
+          start (Lambda init ~300-600ms) and DynamoDB round trips
+          (typically <50ms each): 20s is recommended, comfortably under API
+          Gateway HTTP API's 30s integration timeout while covering
+          design.md SS7 RQ-5's ~6-12s cold-session AgentCore invocation
+          estimate.
+        dependency_groups_status: >-
+          NOT done in this batch. The "Expected content" note asked for
+          moving aws-cdk-lib/constructs to an `infra` dependency group and
+          strands-agents/bedrock-agentcore to an `agent` group so the
+          Lambda zip only bundles what src/api imports, but this is not a
+          numbered tasks.md task for Phase 4/5 and reorganizing
+          [dependency-groups] was judged out of this PR's scope/budget.
+          Instead, a cheap regression guard was added now:
+          tests/unit/test_lambda_package_isolation.py statically asserts
+          (via ast, no imports) that no file under src/api imports
+          aws_cdk, constructs, strands, or bedrock_agentcore. The actual
+          dependency-groups split is still recommended before PR7/PR8's
+          scripts/build_agent.sh packages the Lambda zip.
+        note: >-
+          Strict TDD followed throughout (RED confirmed by
+          ModuleNotFoundError/TypeError before each GREEN implementation;
+          full-suite safety net run before touching responder.py).
+          request_parser.py deliberately never raises — it only unwraps
+          the AWS event shape (method, path, raw body, cookie value,
+          origin, source_ip), so a caller always has origin/cookie_value
+          available to build a CORS-correct error response even when the
+          body turns out to be invalid JSON. The actual JSON/message
+          validation is a separate function, extract_message(), also in
+          request_parser.py (matches tasks.md's own test-file assignment)
+          — it raises ValidationError for missing body, malformed JSON, a
+          non-object body, or a missing/non-string message key; trimming,
+          emptiness, and the 500-char cap are NOT re-checked here, since
+          ChatRequest already owns that check inside answer_question (one
+          rule, one place). CORS preflight (OPTIONS /v1/chat) is a
+          documented design choice, not implemented in the handler: API
+          Gateway HTTP API's own CORS configuration (a Phase 8 CDK
+          setting) is expected to answer OPTIONS before Lambda is ever
+          invoked, so lambda_handler never special-cases method — this
+          must be verified against the real CDK ApiStack in PR8, not unit
+          tests. Container.cookie_secure required a small, backward
+          -compatible addition to responder.success_response (a new
+          cookie_secure: bool = True keyword) so Settings.cookie_secure
+          has an effect; default preserves every existing PR4a test.
+          Log line is a single json.dumps()'d line (never raw
+          interpolation) so a crafted message body can never forge a
+          second log line; session id used for correlation is the
+          confirmed Session.session_id on success or the raw (but
+          shape-validated) cookie value on any error path before a
+          session is decided, falling back to a fixed "no-session"
+          sentinel when no cookie was sent at all — always hashed via
+          hash_for_log before logging, never in the clear.
   verify:
     status: pending
     depends_on: [apply]
