@@ -53,6 +53,10 @@ warn_unused_ignores = true
 module = "tests.*"
 disallow_untyped_defs = false
 
+[[tool.mypy.overrides]]
+module = ["boto3.*", "botocore.*"]
+ignore_missing_imports = true
+
 [tool.pyright]
 pythonVersion = "3.12"
 extraPaths = ["src", "tests"]
