@@ -193,14 +193,14 @@ sub-PR if the real diff exceeds ~450 lines; the split points are noted inline be
 > since PR4b alone has no independent value without the composition root. See
 > `state.yaml` batch `PR4a` for the full rationale.
 
-- [ ] 4.1 Config — `src/api/config.py`: frozen `Settings.from_env()` reading
+- [x] 4.1 Config — `src/api/config.py`: frozen `Settings.from_env()` reading
       `RUNTIME_ARN`, `TABLE_NAME`, `SESSION_DAILY_LIMIT`, `IP_MINUTE_LIMIT`,
       `CORS_ALLOWED_ORIGINS`, `AGENT_TIMEOUT_SECONDS`.
       RED: `tests/unit/test_config.py::test_settings_from_env_reads_all_required_vars`,
       `::test_missing_env_var_raises`.
       GREEN: implement. Acceptance: `rate-limiting` — thresholds *MUST be configurable
       via an environment variable*. Est: ~45 lines.
-- [ ] 4.2 Request parser — `src/api/http/request_parser.py`: HTTP API v2 event ->
+- [x] 4.2 Request parser — `src/api/http/request_parser.py`: HTTP API v2 event ->
       `ChatRequest`, cookie value, `requestContext.http.sourceIp`.
       RED: `tests/unit/http/test_request_parser.py::test_parses_valid_body_and_cookie`,
       `::test_rejects_invalid_json`, `::test_uses_source_ip_and_ignores_x_forwarded_for`
