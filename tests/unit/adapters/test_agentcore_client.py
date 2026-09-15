@@ -81,7 +81,10 @@ def test_payload_uses_prompt_key() -> None:
     adapter.ask("What is your experience with React?", _RUNTIME_SESSION_ID)
 
     call = client.calls[0]
-    assert json.loads(call["payload"]) == {"prompt": "What is your experience with React?"}
+    assert json.loads(call["payload"]) == {
+        "prompt": "What is your experience with React?",
+        "language_hint": None,
+    }
     assert call["contentType"] == "application/json"
     assert call["accept"] == "application/json"
     assert call["agentRuntimeArn"] == _ARN

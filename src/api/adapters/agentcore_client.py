@@ -68,7 +68,10 @@ class AgentCoreClient:
         kwargs: dict[str, Any] = {
             "agentRuntimeArn": self._agent_runtime_arn,
             "runtimeSessionId": runtime_session_id,
-            "payload": json.dumps({"prompt": prompt}).encode(),
+            # `language_hint` is reserved for a future client-side hint (design.md
+            # SS6): v1 always sends `null` and the agent always detects the language
+            # itself, so adding the hint later is not a contract break.
+            "payload": json.dumps({"prompt": prompt, "language_hint": None}).encode(),
             "contentType": _CONTENT_TYPE,
             "accept": _CONTENT_TYPE,
         }
