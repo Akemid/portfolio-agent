@@ -851,7 +851,8 @@ phases:
           dynamodb_schema.py), Bedrock Knowledge Base (S3_VECTORS storage,
           Titan Text Embeddings V2) with its S3 data source and KB service
           role. Independent of PR2-PR6 per tasks.md (depends only on PR1).
-        status: implemented_pending_review
+        status: pr_open
+        pr_url: https://github.com/Akemid/portfolio-agent/pull/12
         commits:
           - 4606375 feat(infra): add CDK DataStack for S3, DynamoDB, and the Bedrock Knowledge Base
         tasks_completed: ["7.1", "7.2", "7.3"]
@@ -1013,6 +1014,128 @@ phases:
           feat/strands-agent..feat/cdk-data-stack -- .
           ':(exclude)uv.lock'` now: 11 files changed, 795 insertions(+), 9
           deletions(-).
+      - pr: PR8a
+        branch: feat/cdk-agent-stack
+        base: feat/cdk-data-stack
+        scope: >-
+          PR8a slice of Phase 8 — the AgentStack half only: task 8.1
+          (scripts/build_agent.sh), task 8.2 (infra/stacks/agent_stack.py: agent
+          code asset, AWS::BedrockAgentCore::Runtime via direct code deployment,
+          agent execution role), and task 8.4a (wiring AgentStack into
+          infra/app.py after DataStack). ApiStack (task 8.3), the remaining
+          ApiStack half of 8.4, and 8.5's DNS comment are PR8b, not this batch.
+        status: implemented_pending_review
+        commits:
+          - 196c259 feat(infra): add CDK AgentStack with AgentCore Runtime and agent role
+          - 3fb5659 feat(scripts): add build_agent.sh for the AgentCore direct-deploy zip
+          - 8896038 feat(infra): wire AgentStack into the CDK app (task 8.4, PR8a slice)
+        tasks_completed: ["8.1", "8.2", "8.4a"]
+        diff_stat: >-
+          git diff --stat feat/cdk-data-stack..feat/cdk-agent-stack -- .
+          ':(exclude)uv.lock': 5 files changed, 552 insertions(+), 12
+          deletions(-); code-only (infra/, scripts/): 3 files changed, 286
+          insertions(+), 5 deletions(-) — well under the ~155+~20+~35 = ~210-line
+          estimate's ceiling and the 400-line budget.
+        local_gate: >-
+          ruff check/format clean, mypy src infra clean, 325 tests pass (up
+          from 313 at PR7-review-fixes time — 11 new tests in
+          test_agent_stack.py, 1 new test in test_app_synth.py).
+        agent_runtime_name_gotcha: >-
+          `AgentRuntimeName`'s CFN pattern is letters/digits/underscore only,
+          starting with a letter, max 48 chars (`^[a-zA-Z][a-zA-Z0-9_]{0,47}$`,
+          confirmed via the GatewayTarget/RuntimeEndpoint Name patterns that embed
+          it, since the Runtime resource's own doc page renders the regex
+          malformed as `a-zA-Z{0,47}`) — no hyphens, unlike every other resource
+          name in this repo. Used `portfolio_agent_runtime` (underscore-separated).
+        deviation_asset_is_a_prebuilt_zip_not_a_directory: >-
+          design.md's illustrative packaging flow shows
+          `aws_s3_assets.Asset(path="build/agent")` (a directory — CDK zips it at
+          synth time). This batch instead has `scripts/build_agent.sh` produce
+          `build/agent.zip` itself and points the Asset at that zip file. Reason:
+          it makes the CDK wiring unit-testable with a tiny fixture zip
+          (`AGENT_ZIP_PATH` env var default `build/agent.zip`) without invoking
+          `uv pip install`/`zip` from pytest, and `AgentStack` fails fast with a
+          clear `FileNotFoundError` pointing at `scripts/build_agent.sh` if the
+          zip is missing — same packaging *flow*, more testable wiring.
+        deviation_logs_permissions_beyond_design_sketch: >-
+          design.md SS9.2's agent-role sketch lists exactly 3 statements
+          (InvokeModel, Retrieve, GetObject). This batch adds 2 more —
+          `logs:CreateLogGroup`+`logs:DescribeLogStreams` and
+          `logs:CreateLogStream`+`logs:PutLogEvents`, both scoped to
+          `arn:aws:logs:<region>:<account>:log-group:/aws/bedrock-agentcore/runtimes/*`
+          (never a bare `"*"` resource) — because
+          https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-permissions.html's
+          "Amazon Bedrock AgentCore direct deploy execution role" example lists
+          these as required for the runtime to write its own CloudWatch Logs.
+          Deliberately did NOT grant the same doc's `logs:DescribeLogGroups`
+          (needs an account-wide `log-group:*` resource), `logs:PutResourcePolicy`
+          (a log-group admin action), X-Ray, or `cloudwatch:PutMetricData` — none
+          of those are exercised by this repo (no tracing/dashboards), and adding
+          them would fail this batch's own least-privilege tests. Flagged as a
+          "to verify at deploy" risk in agent_stack.py's module docstring: if the
+          managed runtime's logging path needs `logs:DescribeLogGroups` before
+          `CreateLogGroup`, a denial there is unconfirmed against a real
+          deployment (agent_invocation itself never raises regardless).
+        model_id_env_var_value: >-
+          `MODEL_ID` is set to the `us.amazon.nova-micro-v1:0` inference-profile
+          id (design.md RQ-1's stated example default), while the agent role
+          grants `bedrock:InvokeModel` on BOTH that inference-profile ARN and the
+          plain `amazon.nova-micro-v1:0` foundation-model ARN — so switching
+          `MODEL_ID` between the two at deploy time needs no IAM change. Carried
+          risk (unchanged from design/PR6 notes): confirm the exact profile id
+          with `aws bedrock list-inference-profiles --region us-east-1` before
+          first deploy.
+        env_vars_scoped_to_agentsettings_only: >-
+          `EnvironmentVariables` sets exactly `MODEL_ID`, `KNOWLEDGE_BASE_ID`,
+          `AWS_REGION` — no `OWNER_NAME` (checked: `src/agent/settings.py`'s
+          `AgentSettings`/`max_answer_chars_from_env` never read such a variable,
+          and `prompts.py`'s system prompt has no owner-name placeholder, so the
+          "OWNER_NAME if present" apply-prompt instruction resolved to "absent,
+          omitted"). `RETRIEVAL_TOP_K`/`MAX_TOKENS`/`TEMPERATURE`/`MAX_ANSWER_CHARS`
+          are also left unset on purpose — `AgentSettings.from_env` already
+          defines and clamps sensible defaults for all four; setting them here
+          too would just duplicate a value that can drift from the code.
+        cdk_credential_leak_gotcha: >-
+          SECURITY-RELEVANT DISCOVERY, not committed anywhere: the first `cdk
+          synth` of this stack, run with `CDK_DEFAULT_ACCOUNT=000000000000` in
+          the shell prefix (this session's usual safe-synth pattern from PR7),
+          still embedded the REAL AWS account id in the synthesized
+          `AgentRuntime`'s S3 asset bucket name
+          (`cdk-hnb659fds-assets-<real-account>-us-east-1`) and in the
+          `ReadOwnCode` IAM statement's resource ARN. Root cause: `aws_s3_assets
+          .Asset` needs a concrete (non-token) account to compute the CDK
+          bootstrap staging-bucket name at synth time, and the `aws-cdk@2` CLI
+          resolves that concrete account by calling STS with whatever AWS
+          credentials are ambiently available — this session's shell had a
+          working `~/.aws/config` profile, and the CLI's own STS-derived
+          `CDK_DEFAULT_ACCOUNT`/`CDK_DEFAULT_REGION` took precedence over the
+          same-named variables set in the parent shell. DataStack (PR7) never
+          hit this because it derives its only account-dependent name from the
+          `Aws.ACCOUNT_ID` CFN pseudo-parameter (stays a token, never resolved at
+          synth), not from an `Asset`. **Fix**, verified working: also set
+          `AWS_CONFIG_FILE=/dev/null AWS_SHARED_CREDENTIALS_FILE=/dev/null
+          AWS_ACCESS_KEY_ID=x AWS_SECRET_ACCESS_KEY=x` alongside
+          `CDK_DEFAULT_ACCOUNT`/`CDK_DEFAULT_REGION` for every future synth that
+          touches an `aws_s3_assets.Asset` (or any other construct that needs a
+          concrete account) — this forces credential resolution to fail so the
+          CLI falls back to the literal `CDK_DEFAULT_ACCOUNT`/`REGION` values.
+          The leaked `cdk.out/` was deleted immediately after being noticed and
+          before a second synth confirmed the fix; the real account id and IAM
+          ARN are intentionally not recorded here or anywhere else in this
+          repository. Also noticed in passing, unrelated to this stack and out
+          of scope to fix here: this session's local `~/.aws/config` stores a
+          long-lived IAM access key/secret in plaintext — worth rotating and
+          moving to short-lived credentials (SSO or an assumed role), a config
+          change entirely outside this repo.
+        for_pr8b: >-
+          `AgentStack.runtime_arn` (== `runtime.attr_agent_runtime_arn`) is
+          exposed for the Lambda role's `bedrock-agentcore:InvokeAgentRuntime`
+          grant. `ApiStack` will need env vars `TABLE_NAME`, `AGENT_RUNTIME_ARN`,
+          `ALLOWED_ORIGINS`, the rate-limit numbers, `COOKIE_SECURE`, `LOG_LEVEL`
+          (per design §4, §6 and the PR6/PR7 apply-progress notes, unchanged by
+          this batch) and `DataStack.table` for the DynamoDB grants.
+          `infra/app.py`'s `AGENT_ZIP_PATH` env var pattern (default
+          `build/agent.zip`) can be reused as-is for any PR8b asset needs.
   verify:
     status: pending
     depends_on: [apply]
