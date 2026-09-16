@@ -8,13 +8,21 @@ authors = [
 requires-python = ">=3.12"
 dependencies = [
     "boto3==1.43.90",
-    "aws-cdk-lib==2.268.0",
-    "constructs==10.8.1",
-    "strands-agents==1.55.0",
-    "bedrock-agentcore==1.22.0",
 ]
 
 [dependency-groups]
+# What the Lambda zip (`src/api`) needs on top of the runtime `dependencies`
+# above: nothing — `boto3` alone. Kept as its own group (rather than folded
+# into `dev`) so `uv export --group agent`/`--group infra` never pull it in
+# by accident; `test_lambda_package_isolation.py` is the enforcing test.
+agent = [
+    "strands-agents==1.55.0",
+    "bedrock-agentcore==1.22.0",
+]
+infra = [
+    "aws-cdk-lib==2.268.0",
+    "constructs==10.8.1",
+]
 dev = [
     "pytest==9.1.1",
     "pytest-cov==7.1.0",
