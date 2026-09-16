@@ -625,6 +625,40 @@ phases:
           session is decided, falling back to a fixed "no-session"
           sentinel when no cookie was sent at all — always hashed via
           hash_for_log before logging, never in the clear.
+        review_fixes: >-
+          PR5b review findings addressed test-first (RED confirmed before
+          each GREEN), one commit per finding on feat/lambda-handler:
+          c6d45de (CRITICAL — a malformed base64 body or valid base64 of
+          invalid UTF-8 bytes escaped lambda_handler unhandled because
+          parse_event ran outside its try/except; _decode_body now raises
+          ValidationError for both failure modes, parse_event moved inside
+          the try block, and a new extract_origin() helper keeps the error
+          path CORS-correct even when no IncomingRequest was ever built;
+          this commit's test edit also covers finding NIT-5, asserting the
+          {"error": "invalid_request"} body shape on
+          test_missing_message_returns_400);
+          c8299be (MEDIUM — a missing/blank requestContext.http.sourceIp
+          fell back to "", and derive_key("ip", "") produced a
+          valid-looking hash that defeated DynamoRateLimiter's empty-key
+          guard, collapsing all such requests into one shared bucket;
+          parse_event.source_ip is now str | None, and lambda_handler
+          rejects with a generic 400 before any session/rate-limit work,
+          logging a fixed non-PII reason code "missing_source_ip");
+          77cbfef (LOW — Settings.from_env accepted any ALLOWED_ORIGINS
+          string with no shape check; each entry must now be an absolute
+          origin, scheme https (http allowed only for
+          localhost/127.0.0.1), no path/query/fragment/wildcard/trailing
+          slash, else ConfigError names the offending entry);
+          35d5a4e (MINOR — message_prefix in the structured log used the
+          raw JSON body instead of the extracted message once extraction
+          had already succeeded; the actual fix landed as a required
+          structural side effect of c6d45de's restructuring — message_for_log
+          is now assigned immediately after extract_message succeeds,
+          before any downstream call that can fail — so this commit is
+          test-only, with RED confirmed by temporarily reverting the
+          assignment point before restoring it). Full gate (ruff
+          check/format, mypy src, pytest) clean after every commit; 213
+          tests pass (up from 192 baseline on this branch).
   verify:
     status: pending
     depends_on: [apply]
