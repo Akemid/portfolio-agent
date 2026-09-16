@@ -36,7 +36,7 @@ class IncomingRequest:
     body: str | None
     cookie_value: str | None
     origin: str | None
-    source_ip: str
+    source_ip: str | None
 
 
 def parse_event(event: Mapping[str, Any]) -> IncomingRequest:
@@ -44,7 +44,12 @@ def parse_event(event: Mapping[str, Any]) -> IncomingRequest:
 
     `source_ip` comes ONLY from `requestContext.http.sourceIp` — never from
     an `X-Forwarded-For` header, which a client fully controls and could
-    forge to evade the per-IP rate limit (`rate-limiting` spec).
+    forge to evade the per-IP rate limit (`rate-limiting` spec). It is
+    `None` when missing or blank, so a caller can reject the request instead
+    of deriving a rate-limit key from an empty string (`rate-limiting` spec,
+    *Header Spoofing Attempt*: an empty key must never collapse unrelated
+    visitors into one shared counter — see `DynamoRateLimiter`'s own
+    empty-key guard).
     """
     http = event.get("requestContext", {}).get("http", {})
     headers = event.get("headers") or {}
@@ -54,7 +59,7 @@ def parse_event(event: Mapping[str, Any]) -> IncomingRequest:
         body=_decode_body(event),
         cookie_value=_extract_cookie_value(event, headers),
         origin=_header(headers, "origin"),
-        source_ip=http.get("sourceIp", ""),
+        source_ip=http.get("sourceIp") or None,
     )
 
 

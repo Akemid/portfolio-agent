@@ -62,6 +62,23 @@ def test_uses_source_ip_and_ignores_x_forwarded_for() -> None:
     assert request.source_ip == "203.0.113.7"
 
 
+def test_missing_source_ip_is_none() -> None:
+    event = _v2_event()
+    del event["requestContext"]["http"]["sourceIp"]
+
+    request = parse_event(event)
+
+    assert request.source_ip is None
+
+
+def test_blank_source_ip_is_none() -> None:
+    event = _v2_event(source_ip="")
+
+    request = parse_event(event)
+
+    assert request.source_ip is None
+
+
 def test_origin_header_is_case_insensitive() -> None:
     event = _v2_event(headers={"Origin": "https://sergiomondragon.com"})
 

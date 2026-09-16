@@ -186,6 +186,30 @@ def test_session_rate_limit_returns_429_with_zero_agent_calls(monkeypatch: pytes
     assert agent_client.calls == []
 
 
+def test_missing_source_ip_returns_400_with_zero_downstream_calls(monkeypatch: pytest.MonkeyPatch) -> None:
+    session_store = FakeSessionStore(FrozenClock(_NOW))
+    rate_limiter = FakeRateLimiter()
+    agent_client = FakeAgentClient()
+    container = Container(
+        session_store=session_store,
+        rate_limiter=rate_limiter,
+        agent_client=agent_client,
+        clock=FrozenClock(_NOW),
+        allowed_origins=(_ALLOWED_ORIGIN,),
+    )
+    monkeypatch.setattr(handler_module, "_container", container)
+    event = _event()
+    del event["requestContext"]["http"]["sourceIp"]
+
+    response = lambda_handler(event, None)
+
+    assert response["statusCode"] == 400
+    assert json.loads(response["body"]) == {"error": "invalid_request"}
+    assert session_store.records == {}
+    assert rate_limiter.calls == []
+    assert agent_client.calls == []
+
+
 def test_ip_rate_limit_returns_429_with_zero_agent_calls(monkeypatch: pytest.MonkeyPatch) -> None:
     rate_limiter = FakeRateLimiter(decisions=[RateLimitDecision(allowed=False, scope="ip", retry_after_seconds=5)])
     agent_client = _install_container(monkeypatch, rate_limiter=rate_limiter)

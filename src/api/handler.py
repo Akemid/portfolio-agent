@@ -52,6 +52,12 @@ _NO_SESSION_LOG_ID = "no-session"
 # is unexpected and gets a full traceback in CloudWatch (never in the body).
 _KNOWN_DOMAIN_ERRORS = (ValidationError, RateLimited, UpstreamError, UpstreamTimeout)
 
+# Fixed, non-PII reason code logged when `requestContext.http.sourceIp` is
+# missing or blank — never the raw event contents (`rate-limiting` spec,
+# *Header Spoofing Attempt*: an empty derived key must never collapse
+# unrelated visitors into one shared rate-limit bucket).
+_MISSING_SOURCE_IP_REASON = "missing_source_ip"
+
 
 @dataclass(frozen=True)
 class Container:
@@ -121,12 +127,16 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     try:
         request = parse_event(event)
         session_id_for_log = request.cookie_value or _NO_SESSION_LOG_ID
+        source_ip = request.source_ip
+        if source_ip is None:
+            logger.warning(_MISSING_SOURCE_IP_REASON)
+            raise ValidationError("source IP is required")
         message = extract_message(request.body)
         message_for_log = message
         result = answer_question(
             message,
             request.cookie_value,
-            request.source_ip,
+            source_ip,
             session_store=container.session_store,
             rate_limiter=container.rate_limiter,
             agent_client=container.agent_client,
