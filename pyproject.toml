@@ -39,7 +39,7 @@ dev = [
 package = false
 
 [tool.pytest.ini_options]
-pythonpath = ["src"]
+pythonpath = ["src", "."]
 testpaths = ["tests"]
 
 [tool.ruff]
@@ -64,4 +64,4 @@ disallow_untyped_defs = false
 
 [tool.pyright]
 pythonVersion = "3.12"
-extraPaths = ["src", "tests"]
+extraPaths = ["src", "tests", "."]
