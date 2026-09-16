@@ -3,6 +3,9 @@
 Docs verified:
 - `Agent`/`BedrockModel` construction: https://strandsagents.com/docs/user-guide/quickstart/python/
 - `@tool` decorator: https://strandsagents.com/docs/user-guide/concepts/tools/index.md
+- `BedrockModel(max_tokens=..., temperature=...)` output-bounding params:
+  https://github.com/strands-agents/docs/blob/main/site/src/content/docs/user-guide/deploy/operating-agents-in-production.mdx
+  (via Context7 `/strands-agents/docs`, 2026-09-15)
 """
 
 from __future__ import annotations
@@ -33,7 +36,12 @@ def build_agent() -> Agent:
     (`agent-runtime` spec, *Foundation Model*).
     """
     settings = AgentSettings.from_env(os.environ)
-    model = BedrockModel(model_id=settings.model_id, region_name=settings.aws_region)
+    model = BedrockModel(
+        model_id=settings.model_id,
+        region_name=settings.aws_region,
+        max_tokens=settings.max_tokens,
+        temperature=settings.temperature,
+    )
     retrieve_client = boto3.client("bedrock-agent-runtime", region_name=settings.aws_region)
     search_tool = build_search_tool(
         retrieve_client,

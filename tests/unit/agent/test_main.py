@@ -127,3 +127,41 @@ def test_json_output_with_blank_or_non_string_answer_falls_back_to_raw_text(
 
     assert result["answer"] == raw
     assert result["language"] == "en"
+
+
+def test_long_answer_is_hard_capped_to_max_answer_chars(monkeypatch: pytest.MonkeyPatch) -> None:
+    """MAJOR/MEDIUM finding: bound the answer length regardless of model
+    output size, defaulting to `MAX_ANSWER_CHARS=1200` (`agent.settings`)."""
+    long_answer = "This is one sentence. " * 200  # far past the 1200-char default
+    monkeypatch.setattr(main, "build_agent", lambda: _json_agent(long_answer, "en"))
+
+    result = main.agent_invocation({"prompt": "tell me everything"})
+
+    assert len(result["answer"]) <= 1200
+
+
+def test_answer_truncation_prefers_a_sentence_boundary() -> None:
+    text = "First sentence. Second sentence. " + "x" * 2000
+    truncated = main._truncate_answer(text, max_chars=33)
+
+    assert truncated == "First sentence. Second sentence."
+
+
+def test_answer_truncation_falls_back_to_a_word_boundary_without_sentence_punctuation() -> None:
+    text = "word " * 10  # no sentence punctuation at all
+    truncated = main._truncate_answer(text, max_chars=12)
+
+    assert truncated == "word word"
+    assert not truncated.endswith(" ")
+
+
+def test_answer_truncation_hard_cuts_a_single_long_word() -> None:
+    text = "x" * 50
+    truncated = main._truncate_answer(text, max_chars=10)
+
+    assert truncated == "x" * 10
+
+
+def test_answer_within_the_limit_is_returned_unchanged() -> None:
+    text = "short answer."
+    assert main._truncate_answer(text, max_chars=1200) == text

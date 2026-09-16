@@ -8,10 +8,32 @@ these tests never do.
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 
+import agent.agent_factory as agent_factory_module
 from agent.agent_factory import build_agent
 from agent.settings import ConfigError
+
+
+class _FakeBedrockModel:
+    """Captures the kwargs `agent_factory.build_agent` passes to `BedrockModel`,
+    so tests can assert on output-bounding config without a live model call.
+
+    `stateful = False` mimics the real `BedrockModel`'s attribute — the
+    Strands `Agent.__init__` reads it directly (`strands/agent/agent.py`),
+    so a bare fake without it raises `AttributeError` before construction
+    even completes.
+    """
+
+    stateful = False
+
+    def __init__(self, **kwargs: Any) -> None:
+        self.kwargs = kwargs
+
+    def get_config(self) -> dict[str, Any]:
+        return self.kwargs
 
 
 @pytest.fixture(autouse=True)
@@ -55,3 +77,27 @@ def test_missing_knowledge_base_id_raises_config_error(monkeypatch: pytest.Monke
 
     with pytest.raises(ConfigError):
         build_agent()
+
+
+def test_bedrock_model_receives_configured_max_tokens_and_temperature(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`agent-runtime` spec-adjacent hardening: generation must be bounded,
+    not left at the SDK's own defaults (MEDIUM security finding)."""
+    monkeypatch.setenv("MAX_TOKENS", "256")
+    monkeypatch.setenv("TEMPERATURE", "0.9")
+    monkeypatch.setattr(agent_factory_module, "BedrockModel", _FakeBedrockModel)
+
+    agent = build_agent()
+
+    assert agent.model.kwargs["max_tokens"] == 256
+    assert agent.model.kwargs["temperature"] == 0.9
+
+
+def test_bedrock_model_receives_default_max_tokens_and_temperature_when_unset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(agent_factory_module, "BedrockModel", _FakeBedrockModel)
+
+    agent = build_agent()
+
+    assert agent.model.kwargs["max_tokens"] == 512
+    assert agent.model.kwargs["temperature"] == 0.2
