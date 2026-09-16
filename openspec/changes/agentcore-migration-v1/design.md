@@ -577,8 +577,11 @@ No `bedrock:InvokeModelWithResponseStream` (v1 is non-streaming). No ECR actions
 is no image.
 
 **Knowledge Base service role:** `bedrock:InvokeModel` on the Titan V2 ARN only;
-`s3:GetObject` + `s3:ListBucket` on the content bucket only;
-`s3vectors:PutVectors|GetVectors|QueryVectors|GetIndex|ListVectors` on the one index ARN.
+`s3:GetObject` on `<ContentBucketArn>/content/*` and `s3:ListBucket` on
+`<ContentBucketArn>` scoped with `StringLike {"s3:prefix": ["content/*"]}` (no
+`grant_read()`-style wildcard actions);
+`s3vectors:GetIndex|GetVectors|PutVectors|QueryVectors|DeleteVectors` on the one index
+ARN (verified — not `ListVectors`, which lists vector *keys*, not KB retrieval).
 
 ### 9.3 Logging rules
 
