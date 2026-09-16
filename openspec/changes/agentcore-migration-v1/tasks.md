@@ -193,14 +193,14 @@ sub-PR if the real diff exceeds ~450 lines; the split points are noted inline be
 > since PR4b alone has no independent value without the composition root. See
 > `state.yaml` batch `PR4a` for the full rationale.
 
-- [ ] 4.1 Config — `src/api/config.py`: frozen `Settings.from_env()` reading
+- [x] 4.1 Config — `src/api/config.py`: frozen `Settings.from_env()` reading
       `RUNTIME_ARN`, `TABLE_NAME`, `SESSION_DAILY_LIMIT`, `IP_MINUTE_LIMIT`,
       `CORS_ALLOWED_ORIGINS`, `AGENT_TIMEOUT_SECONDS`.
       RED: `tests/unit/test_config.py::test_settings_from_env_reads_all_required_vars`,
       `::test_missing_env_var_raises`.
       GREEN: implement. Acceptance: `rate-limiting` — thresholds *MUST be configurable
       via an environment variable*. Est: ~45 lines.
-- [ ] 4.2 Request parser — `src/api/http/request_parser.py`: HTTP API v2 event ->
+- [x] 4.2 Request parser — `src/api/http/request_parser.py`: HTTP API v2 event ->
       `ChatRequest`, cookie value, `requestContext.http.sourceIp`.
       RED: `tests/unit/http/test_request_parser.py::test_parses_valid_body_and_cookie`,
       `::test_rejects_invalid_json`, `::test_uses_source_ip_and_ignores_x_forwarded_for`
@@ -246,7 +246,7 @@ sub-PR if the real diff exceeds ~450 lines; the split points are noted inline be
       GREEN: implement. Acceptance: `agent-runtime` — *Hosting and Invocation*,
       *Invocation Payload Contract*; design §6 runtimeSessionId 33-256 char constraint.
       Est: ~140 lines.
-- [ ] 5.2 Handler composition root — `src/api/handler.py`: module-scope adapter wiring
+- [x] 5.2 Handler composition root — `src/api/handler.py`: module-scope adapter wiring
       (reused across warm invocations), delegates to `answer_question`.
       RED: `tests/unit/test_handler.py::test_handler_wires_real_adapter_types`,
       `::test_boto3_client_construction_includes_bedrock_agentcore` (guards against the
@@ -261,7 +261,15 @@ sub-PR if the real diff exceeds ~450 lines; the split points are noted inline be
       a cross-phase pending test, skip-marked until Phase 6 lands).
       GREEN: unskip once Phase 6 ships. Acceptance: `agent-runtime` — *Invocation
       Payload Contract*, scenario *Contract round-trip*. Est: ~85 lines.
-- [ ] 5.4 End-to-end error mapping test — `tests/unit/test_error_mapping_e2e.py`:
+      **Cut from the 4.1/4.2/5.2/5.4 apply batch**: this task's own RED note says it
+      is a cross-phase pending test, correctly skip-marked until Phase 6 (the agent
+      entrypoint) exists — writing it now would only assert the Lambda side against
+      a fixture with no Phase 6 counterpart to unskip against, and src-only code
+      already reached ~379 changed lines (config.py 97 + request_parser.py 101 +
+      responder.py +12/-2 + handler.py 171) against the ~420-line PR5 budget.
+      Deferred to the apply batch that lands Phase 6, per this batch's explicit
+      instruction to stop and record the cut rather than force it in.
+- [x] 5.4 End-to-end error mapping test — `tests/unit/test_error_mapping_e2e.py`:
       drives `handler.py` with a fake AgentClient raising each domain error and asserts
       502/504 with no internal detail in the body.
       RED then GREEN (implementation already exists from 4.3/5.1; this test closes the
