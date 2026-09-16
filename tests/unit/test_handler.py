@@ -221,6 +221,21 @@ def test_ip_rate_limit_returns_429_with_zero_agent_calls(monkeypatch: pytest.Mon
     assert agent_client.calls == []
 
 
+def test_rate_limited_log_uses_extracted_message_not_raw_body(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    decision = RateLimitDecision(allowed=False, scope="session", retry_after_seconds=30)
+    rate_limiter = FakeRateLimiter(decisions=[decision])
+    _install_container(monkeypatch, rate_limiter=rate_limiter)
+
+    with caplog.at_level(logging.INFO, logger="api.handler"):
+        response = lambda_handler(_event(), None)
+
+    assert response["statusCode"] == 429
+    log_event = json.loads(caplog.records[0].message)
+    assert log_event["message_prefix"] == _MESSAGE
+
+
 def test_disallowed_origin_omits_cors_header(monkeypatch: pytest.MonkeyPatch) -> None:
     _install_container(monkeypatch)
 
