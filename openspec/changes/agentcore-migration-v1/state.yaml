@@ -980,6 +980,39 @@ phases:
           `data_stack.py` imports `api.adapters.dynamo_keys`. Not yet opened
           as a PR (no push/PR in this batch, per the apply instructions);
           not pushed to origin.
+        review_fixes: >-
+          Three test-first fixes applied on top of this batch, one commit
+          per finding (RED confirmed before each GREEN, full gate clean
+          after each): (1) BLOCKER/MEDIUM — `grant_read()` on the content
+          bucket synthesized wildcard ACTIONS (`s3:GetObject*`,
+          `s3:GetBucket*`, `s3:List*`), not just broad resources; replaced
+          with two explicit `iam.PolicyStatement`s — `s3:GetObject` on
+          `content_bucket.arn_for_objects("content/*")`, and
+          `s3:ListBucket` on `content_bucket.bucket_arn` with a
+          `StringLike {"s3:prefix": ["content/*"]}` condition, per
+          https://docs.aws.amazon.com/bedrock/latest/userguide/kb-permissions.html.
+          New test `test_kb_role_s3_permissions_are_scoped_to_content_prefix`
+          pins the exact synthesized statements from `Template.to_json()`;
+          new test `test_no_policy_statement_grants_a_wildcard_action`
+          generically asserts no action in any policy statement in the
+          stack ends in `*` (the pre-existing
+          `test_kb_role_has_no_wildcard_resource` only checked `Resource`,
+          which was already scoped — it did not catch the wildcard
+          actions). (2) MINOR — documented the accepted default FIXED_SIZE
+          chunking decision with a one-line comment in
+          `_build_data_source` (no `ChunkingConfiguration` set; fine for
+          short CV/Markdown documents, revisit if retrieval quality is
+          poor). (3) NIT — corrected design.md SS9.2's KB role sketch to
+          the five verified `s3vectors` actions (`GetIndex`, `GetVectors`,
+          `PutVectors`, `QueryVectors`, `DeleteVectors`, not `ListVectors`)
+          and the scoped S3 statements above. 313 tests pass (up from 311
+          at PR7 apply time); full gate (ruff check/format, mypy src
+          infra, pytest) clean after every commit. Re-synthesized and
+          re-validated with `validate_cloudformation_template` (cfn-lint):
+          0 errors, 0 warnings, valid. `git diff --stat
+          feat/strands-agent..feat/cdk-data-stack -- .
+          ':(exclude)uv.lock'` now: 11 files changed, 795 insertions(+), 9
+          deletions(-).
   verify:
     status: pending
     depends_on: [apply]
