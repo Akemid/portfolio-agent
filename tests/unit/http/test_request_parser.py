@@ -106,6 +106,21 @@ def test_missing_body_is_none() -> None:
     assert request.body is None
 
 
+def test_malformed_base64_body_raises_validation_error() -> None:
+    event = _v2_event(body="%%%not-base64%%%", is_base64_encoded=True)
+
+    with pytest.raises(ValidationError):
+        parse_event(event)
+
+
+def test_base64_body_with_invalid_utf8_raises_validation_error() -> None:
+    encoded = base64.b64encode(b"\xff\xfe").decode("ascii")
+    event = _v2_event(body=encoded, is_base64_encoded=True)
+
+    with pytest.raises(ValidationError):
+        parse_event(event)
+
+
 def test_extract_message_returns_the_message_field() -> None:
     body = '{"message": "What is your experience with React?"}'
 

@@ -31,7 +31,7 @@ from api.adapters.secure_ids import SecureIds
 from api.adapters.system_clock import SystemClock
 from api.config import Settings
 from api.domain.errors import RateLimited, UpstreamError, UpstreamTimeout, ValidationError
-from api.http.request_parser import extract_message, parse_event
+from api.http.request_parser import IncomingRequest, extract_message, extract_origin, parse_event
 from api.http.responder import error_response, success_response
 from api.observability import hash_for_log, truncate
 from api.ports.agent_client import AgentClient
@@ -112,13 +112,17 @@ def _get_container() -> Container:
 def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     """Handle one `POST /v1/chat` invocation: parse -> use case -> respond -> log."""
     container = _get_container()
-    request = parse_event(event)
     started = time.perf_counter()
-    session_id_for_log = request.cookie_value or _NO_SESSION_LOG_ID
+    request: IncomingRequest | None = None
+    session_id_for_log = _NO_SESSION_LOG_ID
+    message_for_log = ""
     scope: str | None = None
 
     try:
+        request = parse_event(event)
+        session_id_for_log = request.cookie_value or _NO_SESSION_LOG_ID
         message = extract_message(request.body)
+        message_for_log = message
         result = answer_question(
             message,
             request.cookie_value,
@@ -135,11 +139,12 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             allowlist=container.allowed_origins,
             cookie_secure=container.cookie_secure,
         )
-        message_for_log = message
     except Exception as exc:
         scope = getattr(exc, "scope", None)
-        response = error_response(exc, origin=request.origin, allowlist=container.allowed_origins)
-        message_for_log = request.body or ""
+        origin = request.origin if request is not None else extract_origin(event)
+        response = error_response(exc, origin=origin, allowlist=container.allowed_origins)
+        if not message_for_log and request is not None:
+            message_for_log = request.body or ""
         if not isinstance(exc, _KNOWN_DOMAIN_ERRORS):
             logger.exception("unhandled error in lambda_handler")
 

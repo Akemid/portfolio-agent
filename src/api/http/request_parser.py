@@ -2,17 +2,22 @@
 composition root; `chat-endpoint` spec, *Request Contract*; `rate-limiting`
 spec, *Header Spoofing Attempt*).
 
-`parse_event` never raises: it only unwraps the AWS event shape, so a caller
-always has `origin`/`cookie_value` available to build an error response even
-when the body turns out to be invalid. `extract_message` is the separate,
-raising step that turns the raw body into the validated `message` string
-(`chat-endpoint` spec, *Invalid JSON*) — kept apart so a parsing failure still
-leaves `IncomingRequest` usable for CORS/error headers.
+`parse_event` can raise `ValidationError` when `isBase64Encoded` is true and
+`event["body"]` is not valid base64, or decodes to bytes that are not valid
+UTF-8 — a malformed body must never escape as an unhandled exception (it must
+map to a generic `400`, never a raw exception message). Every other field is
+unwrapped without raising, so a caller still has `origin`/`cookie_value`
+available to build an error response even when the body turns out to be
+invalid JSON. `extract_message` is the separate, raising step that turns the
+raw body into the validated `message` string (`chat-endpoint` spec, *Invalid
+JSON*) — kept apart so a parsing failure still leaves `IncomingRequest` usable
+for CORS/error headers.
 """
 
 from __future__ import annotations
 
 import base64
+import binascii
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -53,6 +58,18 @@ def parse_event(event: Mapping[str, Any]) -> IncomingRequest:
     )
 
 
+def extract_origin(event: Mapping[str, Any]) -> str | None:
+    """Return the `Origin` header from `event`, without decoding the body.
+
+    Never raises. Used by the composition root to build a CORS-correct error
+    response even when `parse_event` itself raised (e.g. a malformed base64
+    body) — the origin lookup must not depend on whether the body could be
+    decoded.
+    """
+    headers = event.get("headers") or {}
+    return _header(headers, "origin")
+
+
 def extract_message(body: str | None) -> str:
     """Return the validated `message` string from a raw JSON request body.
 
@@ -82,7 +99,10 @@ def _decode_body(event: Mapping[str, Any]) -> str | None:
     if raw is None:
         return None
     if event.get("isBase64Encoded"):
-        return base64.b64decode(raw).decode("utf-8")
+        try:
+            return base64.b64decode(raw, validate=True).decode("utf-8")
+        except (binascii.Error, UnicodeDecodeError) as exc:
+            raise ValidationError("request body must be valid base64-encoded UTF-8") from exc
     return str(raw)
 
 

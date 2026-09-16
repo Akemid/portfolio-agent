@@ -6,6 +6,7 @@ against the moto `dynamodb_table` fixture.
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 from datetime import UTC, datetime
@@ -37,14 +38,18 @@ _REQUIRED_ENV = {
 
 
 def _event(
-    *, body: str | None = None, cookies: list[str] | None = None, origin: str | None = _ALLOWED_ORIGIN
+    *,
+    body: str | None = None,
+    cookies: list[str] | None = None,
+    origin: str | None = _ALLOWED_ORIGIN,
+    is_base64_encoded: bool = False,
 ) -> dict[str, Any]:
     return {
         "requestContext": {"http": {"method": "POST", "path": "/v1/chat", "sourceIp": _SOURCE_IP}},
         "headers": {"origin": origin} if origin else {},
         "cookies": cookies or [],
         "body": body if body is not None else json.dumps({"message": _MESSAGE}),
-        "isBase64Encoded": False,
+        "isBase64Encoded": is_base64_encoded,
     }
 
 
@@ -145,6 +150,27 @@ def test_missing_message_returns_400(monkeypatch: pytest.MonkeyPatch) -> None:
     response = lambda_handler(_event(body=json.dumps({"not_message": "hi"})), None)
 
     assert response["statusCode"] == 400
+    assert json.loads(response["body"]) == {"error": "invalid_request"}
+
+
+def test_malformed_base64_body_returns_400_with_cors_headers(monkeypatch: pytest.MonkeyPatch) -> None:
+    _install_container(monkeypatch)
+
+    response = lambda_handler(_event(body="%%%not-base64%%%", is_base64_encoded=True), None)
+
+    assert response["statusCode"] == 400
+    assert json.loads(response["body"]) == {"error": "invalid_request"}
+    assert response["headers"]["Access-Control-Allow-Origin"] == _ALLOWED_ORIGIN
+
+
+def test_base64_body_with_invalid_utf8_returns_400(monkeypatch: pytest.MonkeyPatch) -> None:
+    _install_container(monkeypatch)
+    encoded = base64.b64encode(b"\xff\xfe").decode("ascii")
+
+    response = lambda_handler(_event(body=encoded, is_base64_encoded=True), None)
+
+    assert response["statusCode"] == 400
+    assert json.loads(response["body"]) == {"error": "invalid_request"}
 
 
 def test_session_rate_limit_returns_429_with_zero_agent_calls(monkeypatch: pytest.MonkeyPatch) -> None:
