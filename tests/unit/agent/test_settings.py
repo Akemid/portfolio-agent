@@ -43,6 +43,21 @@ def test_non_integer_top_k_raises_config_error() -> None:
         AgentSettings.from_env({**_REQUIRED_ENV, "RETRIEVAL_TOP_K": "not-a-number"})
 
 
+@pytest.mark.parametrize("out_of_range", ["0", "11"])
+def test_retrieval_top_k_outside_1_to_10_raises_config_error(out_of_range: str) -> None:
+    """LOW finding: clamp RETRIEVAL_TOP_K to 1..10 — too low starves the
+    model of context, too high inflates prompt size and cost."""
+    with pytest.raises(ConfigError):
+        AgentSettings.from_env({**_REQUIRED_ENV, "RETRIEVAL_TOP_K": out_of_range})
+
+
+@pytest.mark.parametrize("boundary", ["1", "10"])
+def test_retrieval_top_k_at_the_boundary_is_accepted(boundary: str) -> None:
+    settings = AgentSettings.from_env({**_REQUIRED_ENV, "RETRIEVAL_TOP_K": boundary})
+
+    assert settings.retrieval_top_k == int(boundary)
+
+
 def test_reads_max_tokens_and_temperature_from_env() -> None:
     settings = AgentSettings.from_env({**_REQUIRED_ENV, "MAX_TOKENS": "1024", "TEMPERATURE": "0.7"})
 
