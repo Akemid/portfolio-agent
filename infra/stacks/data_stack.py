@@ -220,6 +220,9 @@ class DataStack(Stack):
         return knowledge_base
 
     def _build_data_source(self) -> bedrock.CfnDataSource:
+        # No `VectorIngestionConfiguration.ChunkingConfiguration` is set, so Bedrock
+        # defaults to FIXED_SIZE chunking — accepted here for short CV/Markdown documents;
+        # revisit (e.g. semantic chunking) if retrieval quality is poor in practice.
         data_source = bedrock.CfnDataSource(
             self,
             "ContentDataSource",
