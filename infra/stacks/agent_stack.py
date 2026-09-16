@@ -27,6 +27,12 @@ Verified against AWS documentation before writing (URLs cited per resource):
   page, which additionally lists ECR and workload-identity-token actions that a
   direct-code, no-OAuth-tool agent like this one does not need):
   https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-permissions.html
+- Geographic cross-region inference (CRIS) IAM requirements — grant
+  `bedrock:InvokeModel` on the foundation-model ARN in every destination region of
+  the profile, not just the deploy region — and the US profile's destination
+  regions (`us-east-1`, `us-east-2`, `us-west-2`):
+  https://docs.aws.amazon.com/bedrock/latest/userguide/geographic-cross-region-inference.html
+  https://docs.aws.amazon.com/cdk/api/v2/docs/@aws-cdk_aws-bedrock-alpha.CrossRegionInferenceProfileRegion.html
 
 Deviation from design.md SS9.2's illustrative 3-statement IAM sketch: this role also
 grants the four CloudWatch Logs actions the docs above list as required for the
@@ -74,10 +80,20 @@ AGENT_RUNTIME_LANGUAGE = "PYTHON_3_12"
 ENTRY_POINT = ["main.py"]
 
 # design.md SS8 RQ-1: base on-demand id and the US cross-region inference profile.
-# The agent role grants InvokeModel on BOTH ARNs regardless of which one `MODEL_ID`
-# is actually set to, so switching between them at deploy time needs no role change.
+# The agent role grants InvokeModel on every ARN below regardless of which one
+# `MODEL_ID` is actually set to, so switching between them at deploy time needs no
+# role change.
 NOVA_MICRO_MODEL_ID = "amazon.nova-micro-v1:0"
 NOVA_MICRO_INFERENCE_PROFILE_ID = "us.amazon.nova-micro-v1:0"
+# `us.amazon.nova-micro-v1:0` is a Geographic cross-region inference (CRIS)
+# profile: it can route a request to the foundation model in ANY of these
+# destination regions, and IAM requires bedrock:InvokeModel on the
+# foundation-model ARN in each one (source region included) — granting only the
+# deploy region's ARN causes AccessDeniedException whenever CRIS routes
+# elsewhere:
+# https://docs.aws.amazon.com/bedrock/latest/userguide/geographic-cross-region-inference.html
+# https://docs.aws.amazon.com/cdk/api/v2/docs/@aws-cdk_aws-bedrock-alpha.CrossRegionInferenceProfileRegion.html
+NOVA_MICRO_US_REGIONS = ("us-east-1", "us-east-2", "us-west-2")
 
 _RUNTIME_LOG_GROUP_ARN_PATTERN = (
     f"arn:aws:logs:{Aws.REGION}:{Aws.ACCOUNT_ID}:log-group:/aws/bedrock-agentcore/runtimes/*"
@@ -132,7 +148,10 @@ class AgentStack(Stack):
                 sid="AnswerModelOnly",
                 actions=["bedrock:InvokeModel"],
                 resources=[
-                    f"arn:aws:bedrock:{Aws.REGION}::foundation-model/{NOVA_MICRO_MODEL_ID}",
+                    *[
+                        f"arn:aws:bedrock:{region}::foundation-model/{NOVA_MICRO_MODEL_ID}"
+                        for region in NOVA_MICRO_US_REGIONS
+                    ],
                     f"arn:aws:bedrock:{Aws.REGION}:{Aws.ACCOUNT_ID}:inference-profile/{NOVA_MICRO_INFERENCE_PROFILE_ID}",
                 ],
             )

@@ -25,6 +25,7 @@ from infra.stacks.agent_stack import (
     ENTRY_POINT,
     NOVA_MICRO_INFERENCE_PROFILE_ID,
     NOVA_MICRO_MODEL_ID,
+    NOVA_MICRO_US_REGIONS,
     AgentStack,
 )
 from infra.stacks.data_stack import DataStack
@@ -93,7 +94,16 @@ def test_agent_runtime_name_matches_the_cfn_allowed_pattern(fake_agent_zip: str)
     assert re.fullmatch(r"[a-zA-Z][a-zA-Z0-9_]{0,47}", AGENT_RUNTIME_NAME)
 
 
-def test_agent_role_grants_both_model_arns(fake_agent_zip: str) -> None:
+def test_agent_role_grants_invoke_model_on_every_cris_destination_region(fake_agent_zip: str) -> None:
+    """MAJOR finding: `us.amazon.nova-micro-v1:0` is a Geographic cross-region
+    inference (CRIS) profile that can route a request to any of its
+    destination regions (us-east-1, us-east-2, us-west-2) — IAM must grant
+    `bedrock:InvokeModel` on the foundation-model ARN in EACH of those
+    regions, not just the deploy region, or a request routed elsewhere gets
+    `AccessDeniedException`. Verified:
+    https://docs.aws.amazon.com/bedrock/latest/userguide/geographic-cross-region-inference.html
+    https://docs.aws.amazon.com/cdk/api/v2/docs/@aws-cdk_aws-bedrock-alpha.CrossRegionInferenceProfileRegion.html
+    """
     template = _synth_template(fake_agent_zip)
     template_json = template.to_json()
 
@@ -102,12 +112,22 @@ def test_agent_role_grants_both_model_arns(fake_agent_zip: str) -> None:
     assert statement["Action"] == "bedrock:InvokeModel"
     resources = statement["Resource"]
     assert isinstance(resources, list)
-    assert len(resources) == 2
-    # Both ARNs are built from the `AWS::Region`/`AWS::AccountId` pseudo-parameters
-    # (Aws.REGION / Aws.ACCOUNT_ID), so they synthesize as Fn::Join tokens, not
-    # literal strings — assert the literal ARN suffixes are present in the joins.
-    assert f"::foundation-model/{NOVA_MICRO_MODEL_ID}" in resources[0]["Fn::Join"][1]
-    assert f":inference-profile/{NOVA_MICRO_INFERENCE_PROFILE_ID}" in resources[1]["Fn::Join"][1]
+    assert len(resources) == len(NOVA_MICRO_US_REGIONS) + 1
+
+    # Each destination-region foundation-model ARN is a literal region string
+    # (no account, per the CFN reference) so it synthesizes as a plain string,
+    # not an Fn::Join token — exact list, in NOVA_MICRO_US_REGIONS order.
+    literal_resources = resources[:-1]
+    assert literal_resources == [
+        f"arn:aws:bedrock:{region}::foundation-model/{NOVA_MICRO_MODEL_ID}" for region in NOVA_MICRO_US_REGIONS
+    ]
+
+    # The inference-profile ARN is built from the `AWS::Region`/`AWS::AccountId`
+    # pseudo-parameters (Aws.REGION / Aws.ACCOUNT_ID), so it synthesizes as an
+    # Fn::Join token — assert the literal ARN suffix is present in the join.
+    profile_resource = resources[-1]
+    assert isinstance(profile_resource, dict)
+    assert f":inference-profile/{NOVA_MICRO_INFERENCE_PROFILE_ID}" in profile_resource["Fn::Join"][1]
 
 
 def test_agent_role_retrieves_only_the_one_knowledge_base(fake_agent_zip: str) -> None:
