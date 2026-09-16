@@ -769,7 +769,44 @@ phases:
           - "MODEL_ID (required; amazon.nova-micro-v1:0 or the us.amazon.nova-micro-v1:0 inference profile)"
           - "KNOWLEDGE_BASE_ID (required)"
           - "AWS_REGION (default us-east-1)"
-          - "RETRIEVAL_TOP_K (default 4)"
+          - "RETRIEVAL_TOP_K (default 4, clamped 1..10)"
+          - "MAX_TOKENS (default 512, clamped 64..2048 — added in the PR6 review-fixes pass)"
+          - "TEMPERATURE (default 0.2, clamped 0..1 — added in the PR6 review-fixes pass)"
+          - "MAX_ANSWER_CHARS (default 1200 — added in the PR6 review-fixes pass; read independently of AgentSettings.from_env)"
+        review_fixes: >-
+          Six test-first fixes applied on top of this batch, one commit per
+          finding (RED confirmed before each GREEN, full gate clean after
+          each): (1) MAJOR/MEDIUM — bound generation via new MAX_TOKENS
+          (default 512, 64..2048) and TEMPERATURE (default 0.2, 0..1) on
+          AgentSettings, passed to BedrockModel(max_tokens=...,
+          temperature=...); hard-capped the parsed answer to
+          MAX_ANSWER_CHARS (default 1200), truncated at a sentence/word
+          boundary in main.py's output parser. (2) MEDIUM — retrieved
+          passages now wrapped in `<passage source="portfolio">...</passage>`
+          (escaping a literal closing tag in the text), with one new system
+          prompt sentence stating passage content is reference data, never
+          instructions. (3) LOW — RETRIEVAL_TOP_K clamped to 1..10 with
+          ConfigError outside range (the clamp landed inside finding 1's
+          shared range-check helper; this commit added the dedicated
+          boundary/out-of-range test coverage, RED-verified via a temporary
+          revert). (4) LOW — prompts over 1000 chars are rejected with the
+          generic fallback response before build_agent()/the agent are
+          called; documented and tested that language_hint is accepted and
+          intentionally unused in v1. (5) docs — design.md SS5 updated to
+          describe the own @tool against bedrock-agent-runtime.Retrieve and
+          the rejection of strands-agents-tools, plus a new environment
+          variables table. (6) NIT — fakes now mimic a real Strands
+          response's trailing newline (comment explains the .strip()
+          reliance in main.py); new factory test locks Agent(...) to
+          exactly {model, system_prompt, tools} with one tool (verified via
+          Context7 /strands-agents/docs that there is no directory-based
+          tool-loading argument). 300 tests pass (up from 267 at PR6 apply
+          time); full gate (ruff check/format, mypy src, pytest) clean
+          after every commit. `git diff --stat
+          feat/lambda-handler..feat/strands-agent -- .
+          ':(exclude)uv.lock'` now: 19 files changed, 1503 insertions(+),
+          29 deletions(-). PR8 needs to add the three new env vars above to
+          the AgentCore Runtime's environment configuration.
         iam_for_pr8: >-
           Agent execution role (design.md SS9.2, unchanged by this batch —
           recorded here for PR8's convenience): `bedrock:InvokeModel` scoped
