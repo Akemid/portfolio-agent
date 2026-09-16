@@ -69,3 +69,24 @@ def test_build_layout_root_main_is_importable_and_exposes_app(tmp_path: Path) ->
     )
 
     assert proc.returncode == 0, proc.stderr
+
+
+def test_build_fails_when_zip_exceeds_the_size_limit(tmp_path: Path) -> None:
+    """MINOR finding: exceeding the documented 250 MB zipped limit for
+    AgentCore Runtime direct code deployment must fail the build (`exit 1`),
+    not just print a warning and continue — `BUILD_MAX_ZIP_BYTES` overrides
+    the limit so this is testable without building an actual 250 MB zip."""
+    build_dir = tmp_path / "agent"
+    env = {**os.environ, "BUILD_SKIP_DEPS": "1", "BUILD_MAX_ZIP_BYTES": "1"}
+
+    result = subprocess.run(
+        ["bash", str(BUILD_SCRIPT), str(build_dir)],
+        cwd=REPO_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+
+    assert result.returncode == 1
+    assert "250 MB" in result.stderr

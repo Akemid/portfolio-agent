@@ -7,8 +7,9 @@
 # the package so its internal `from agent.x import y` imports resolve — plus a
 # root `main.py` shim (`scripts/agent_entrypoint.py`, `from agent.main import
 # app`) so the zip root itself matches the `EntryPoint: ["main.py"]` used by
-# `infra/stacks/agent_stack.py`) and zips it deterministically into build/agent.zip,
-# the file `infra/stacks/agent_stack.py`'s `aws_s3_assets.Asset` wraps.
+# `infra/stacks/agent_stack.py`) and zips it into build/agent.zip with
+# reproducible ordering (mtimes are not normalized), the file
+# `infra/stacks/agent_stack.py`'s `aws_s3_assets.Asset` wraps.
 #
 # Verified against AWS documentation before writing this script: AgentCore Runtime
 # direct code deployment supports **arm64 only** and requires Linux wheels
@@ -20,6 +21,7 @@
 #   build_dir defaults to build/agent; override only for tests (the zip and
 #   requirements files are always written next to it).
 # Env: BUILD_SKIP_DEPS=1 skips the export/install steps (test-only fast path).
+#   BUILD_MAX_ZIP_BYTES overrides the 250 MB size-limit check (test-only).
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -31,7 +33,7 @@ OUT_DIR="$(dirname "${BUILD_DIR}")"
 ZIP_PATH="${OUT_DIR}/agent.zip"
 REQUIREMENTS_PATH="${OUT_DIR}/agent-requirements.txt"
 # Documented AgentCore Runtime direct-code-deployment limit (zipped size).
-MAX_ZIP_BYTES=$((250 * 1024 * 1024))
+MAX_ZIP_BYTES="${BUILD_MAX_ZIP_BYTES:-$((250 * 1024 * 1024))}"
 
 rm -rf "${BUILD_DIR}" "${ZIP_PATH}"
 mkdir -p "${BUILD_DIR}"
@@ -72,6 +74,7 @@ zip_size=$(stat -f%z "${ZIP_PATH}" 2>/dev/null || stat -c%s "${ZIP_PATH}")
 echo "Built ${ZIP_PATH} (${zip_size} bytes)"
 
 if [ "${zip_size}" -gt "${MAX_ZIP_BYTES}" ]; then
-  echo "WARNING: ${ZIP_PATH} is ${zip_size} bytes, over the documented 250 MB" >&2
+  echo "ERROR: ${ZIP_PATH} is ${zip_size} bytes, over the documented 250 MB" >&2
   echo "zipped limit for AgentCore Runtime direct code deployment." >&2
+  exit 1
 fi
