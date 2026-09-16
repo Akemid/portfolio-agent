@@ -1136,6 +1136,63 @@ phases:
           this batch) and `DataStack.table` for the DynamoDB grants.
           `infra/app.py`'s `AGENT_ZIP_PATH` env var pattern (default
           `build/agent.zip`) can be reused as-is for any PR8b asset needs.
+        review_fixes: >-
+          Four test-first fixes applied on top of this batch, one commit per
+          finding group (RED confirmed before each GREEN, full gate clean
+          after each) on feat/cdk-agent-stack:
+          d93f6e3 (BLOCKER — zip layout: `src/agent/*.py` import siblings as
+          `from agent.x import y`, but the zip copied them flat to the root,
+          leaving `agent` unimportable at runtime. Copy `src/agent` to
+          `<build_dir>/agent/` instead and add a root `main.py` shim,
+          `scripts/agent_entrypoint.py` — `from agent.main import app` —
+          so `EntryPoint: ["main.py"]` still resolves at the zip root.
+          `scripts/build_agent.sh` gained a build-dir override argument and
+          `BUILD_SKIP_DEPS=1` so the copy/shim logic is testable via
+          `tests/unit/scripts/test_build_agent_layout.py` without a real
+          dependency install — the RED test reproduced the exact
+          `ModuleNotFoundError: No module named 'agent'` before the fix);
+          a0669ee (BLOCKER — Strands' `BedrockModel` defaults to
+          `streaming=True` (Bedrock `ConverseStream`), but the agent
+          execution role only grants `bedrock:InvokeModel`, not
+          `bedrock:InvokeModelWithResponseStream`, so every invocation
+          would fail `AccessDeniedException`; `agent_factory.build_agent`
+          now passes `streaming=False` — v1 stays non-streaming,
+          `str(agent(prompt))` — verified via Context7
+          `/strands-agents/docs`, `amazon-bedrock.mdx` "Configure Streaming
+          and Non-Streaming Bedrock Models"; `agent_stack.py`'s module
+          docstring now documents why `InvokeModelWithResponseStream` is
+          deliberately absent and that a v2 streaming agent must add it
+          before flipping `streaming=True`);
+          6340853 (MAJOR — CRIS regional ARNs: `us.amazon.nova-micro-v1:0`
+          is a Geographic cross-region inference profile that can route to
+          `us-east-1`, `us-east-2`, or `us-west-2`; IAM requires the
+          foundation-model ARN in every destination region, not just the
+          deploy region, or a re-routed request gets `AccessDeniedException`.
+          Added `NOVA_MICRO_US_REGIONS = ("us-east-1", "us-east-2",
+          "us-west-2")` and the `AnswerModelOnly` statement now grants
+          `bedrock:InvokeModel` on the foundation-model ARN per region plus
+          the inference-profile ARN (4 resources total, still no wildcard) —
+          verified against
+          https://docs.aws.amazon.com/bedrock/latest/userguide/geographic-cross-region-inference.html
+          and
+          https://docs.aws.amazon.com/cdk/api/v2/docs/@aws-cdk_aws-bedrock-alpha.CrossRegionInferenceProfileRegion.html);
+          0c3d51a (MINOR — `build_agent.sh` only warned when the zip
+          exceeded the documented 250 MB limit and still exited 0; now
+          exits 1 (message kept), with `BUILD_MAX_ZIP_BYTES` as a test-only
+          override; also corrected the header's "deterministically" wording
+          to "reproducible ordering; mtimes not normalized"). NIT: none
+          else — `bash -n` and `shellcheck` both clean on
+          `scripts/build_agent.sh` throughout. 329 tests pass (up from 325
+          at PR8a apply time); full gate (ruff check/format, mypy src
+          infra, pytest) clean after every commit. Re-synthesized with
+          neutralized credentials and re-validated with
+          `validate_cloudformation_template` (cfn-lint): 0 errors, 0
+          warnings, valid — the template now shows the 3 literal
+          foundation-model ARNs (one per CRIS region) plus the
+          `Fn::Join`-built inference-profile ARN on `AnswerModelOnly`. `git
+          diff --stat feat/cdk-data-stack..feat/cdk-agent-stack -- .
+          ':(exclude)uv.lock'` now: 12 files changed, 929 insertions(+), 24
+          deletions(-).
   verify:
     status: pending
     depends_on: [apply]
