@@ -28,7 +28,11 @@ class _FakeAgent:
 
 
 def _json_agent(answer: str, language: str) -> _FakeAgent:
-    return _FakeAgent(json.dumps({"answer": answer, "language": language}))
+    # NIT: a real Strands `Agent` response commonly carries a trailing
+    # newline; `main.agent_invocation` relies on `.strip()`-ing
+    # `str(strands_agent(prompt))` before `json.loads`, so this fake mimics
+    # that trailing newline rather than handing back already-clean JSON.
+    return _FakeAgent(json.dumps({"answer": answer, "language": language}) + "\n")
 
 
 def test_fresh_agent_built_per_invocation(monkeypatch: pytest.MonkeyPatch) -> None:

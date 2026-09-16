@@ -49,7 +49,12 @@ class _RecordingBotoClient:
 
 
 class _FakeStrandsAgent:
-    """Stands in for a Strands `Agent`: `str(agent(prompt))` returns fixed text."""
+    """Stands in for a Strands `Agent`: `str(agent(prompt))` returns fixed text.
+
+    NIT: a real Strands response commonly carries a trailing newline, and
+    `agent.main.agent_invocation` relies on `.strip()`-ing it before
+    `json.loads` — mimic that here rather than handing back pre-cleaned JSON.
+    """
 
     def __init__(self, raw_text: str) -> None:
         self._raw_text = raw_text
@@ -77,7 +82,7 @@ def test_agent_entrypoint_accepts_the_fixture_request_and_the_response_round_tri
     the response it produces round-trips through the Lambda's own response
     parser (`AgentCoreClient._parse_answer`) -- one JSON fixture pair, both
     directions of the contract."""
-    monkeypatch.setattr(agent_main, "build_agent", lambda: _FakeStrandsAgent(json.dumps(_RESPONSE_FIXTURE)))
+    monkeypatch.setattr(agent_main, "build_agent", lambda: _FakeStrandsAgent(json.dumps(_RESPONSE_FIXTURE) + "\n"))
 
     result = agent_main.agent_invocation(dict(_REQUEST_FIXTURE))
 

@@ -101,3 +101,24 @@ def test_bedrock_model_receives_default_max_tokens_and_temperature_when_unset(
 
     assert agent.model.kwargs["max_tokens"] == 512
     assert agent.model.kwargs["temperature"] == 0.2
+
+
+def test_agent_receives_exactly_model_system_prompt_and_tools_kwargs(monkeypatch: pytest.MonkeyPatch) -> None:
+    """NIT regression guard: the Strands `Agent` constructor takes `tools` as
+    a plain list of callables — there is no directory-based tool-loading
+    argument (e.g. a `tools_dir`/`load_tools_from_directory`-style kwarg)
+    (verified via Context7 `/strands-agents/docs`, quickstart/python.mdx and
+    concepts/agents/prompts.mdx, 2026-09-15: `Agent(model=..., tools=[...],
+    system_prompt=...)`). A future refactor must not reintroduce one."""
+    captured: dict[str, Any] = {}
+
+    class _FakeAgent:
+        def __init__(self, **kwargs: Any) -> None:
+            captured.update(kwargs)
+
+    monkeypatch.setattr(agent_factory_module, "Agent", _FakeAgent)
+
+    build_agent()
+
+    assert captured.keys() == {"model", "system_prompt", "tools"}
+    assert len(captured["tools"]) == 1
