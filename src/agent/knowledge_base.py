@@ -35,6 +35,17 @@ logger = logging.getLogger(__name__)
 
 _NO_RESULTS_MESSAGE = "No relevant information was found in the portfolio content."
 _RETRIEVAL_ERROR_MESSAGE = "The knowledge base is temporarily unavailable."
+# MEDIUM security finding: retrieved passages must be delimited as untrusted
+# data (`prompts.py`'s "reference data" sentence tells the model what these
+# tags mean). Escaping a literal "</passage>" inside the retrieved text stops
+# a malicious or corrupted passage from closing its own wrapper early and
+# smuggling unwrapped, seemingly-trusted markup after it.
+_PASSAGE_TEMPLATE = '<passage source="portfolio">{text}</passage>'
+
+
+def _wrap_passage(text: str) -> str:
+    escaped = text.replace("</passage>", "&lt;/passage&gt;")
+    return _PASSAGE_TEMPLATE.format(text=escaped)
 
 
 class RetrieveClient(Protocol):
@@ -79,6 +90,6 @@ def build_search_tool(client: RetrieveClient, knowledge_base_id: str, top_k: int
         ]
         if not passages:
             return _NO_RESULTS_MESSAGE
-        return "\n\n".join(passages)
+        return "\n\n".join(_wrap_passage(passage) for passage in passages)
 
     return search_portfolio

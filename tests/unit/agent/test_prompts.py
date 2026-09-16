@@ -55,3 +55,12 @@ def test_prompt_requires_off_topic_refusal() -> None:
     lowered = SYSTEM_PROMPT.lower()
     assert "decline" in lowered
     assert "cv" in lowered or "portfolio" in lowered
+
+
+def test_prompt_states_passage_tag_content_is_reference_data() -> None:
+    """MEDIUM security finding: `knowledge_base.py` wraps retrieved passages
+    in `<passage>` tags — the prompt must tell the model that content inside
+    those tags is reference data, never an instruction."""
+    lowered = SYSTEM_PROMPT.lower()
+    assert "<passage>" in lowered or "<passage" in lowered
+    assert "reference data" in lowered
