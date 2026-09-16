@@ -253,7 +253,7 @@ sub-PR if the real diff exceeds ~450 lines; the split points are noted inline be
       "bundled boto3 lacks the client" risk from design §12/13).
       GREEN: implement. Acceptance: design §4 composition root responsibility.
       Est: ~90 lines.
-- [ ] 5.3 Contract test — `tests/contract/test_payload_contract.py`: one shared JSON
+- [x] 5.3 Contract test — `tests/contract/test_payload_contract.py`: one shared JSON
       fixture pair validated from both the Lambda's produced payload and the (Phase 6)
       agent entrypoint's accepted payload; likewise for the response shape.
       RED: write the fixture and the test against the Lambda side first (fails until
@@ -269,6 +269,7 @@ sub-PR if the real diff exceeds ~450 lines; the split points are noted inline be
       responder.py +12/-2 + handler.py 171) against the ~420-line PR5 budget.
       Deferred to the apply batch that lands Phase 6, per this batch's explicit
       instruction to stop and record the cut rather than force it in.
+      **Landed in the PR6 apply batch** (2026-09-15), alongside task 6.5.
 - [x] 5.4 End-to-end error mapping test — `tests/unit/test_error_mapping_e2e.py`:
       drives `handler.py` with a fake AgentClient raising each domain error and asserts
       502/504 with no internal detail in the body.
@@ -280,7 +281,24 @@ sub-PR if the real diff exceeds ~450 lines; the split points are noted inline be
 
 ## Phase 6: Strands Agent (PR 6, can proceed in parallel with PR2-5)
 
-- [ ] 6.1 System prompt — `src/agent/prompts.py`: `SYSTEM_PROMPT` covering identity
+> **Split note (apply batch, 2026-09-15):** PR boundary is Phase 6 (6.1-6.5)
+> plus the dependency-groups split that PR5b's apply-progress deferred
+> (`aws-cdk-lib`/`constructs` -> `infra` group, `strands-agents`/
+> `bedrock-agentcore` -> `agent` group). **Deviation from design.md §5**: the
+> KB tool is a small own `@tool` (`src/agent/knowledge_base.py`) against
+> `bedrock-agent-runtime`'s `Retrieve` API, not the community
+> `strands-agents-tools` package's `retrieve` tool — that dependency was
+> added and measured (`uv add strands-agents-tools`) and pulls ~20 unrelated
+> transitive packages (pillow, sympy, aiohttp, slack-bolt, beautifulsoup4,
+> ...), which violates design.md RQ-5's own explicit dependency floor
+> ("`strands-agents`, `bedrock-agentcore`, `boto3`, nothing else"). Two new
+> supporting modules not in design.md §5's table were added to make that
+> tool and its config testable: `src/agent/knowledge_base.py` and
+> `src/agent/settings.py` (`AgentSettings.from_env`, mirroring
+> `api.config.Settings`'s fail-fast shape without importing `src/api`). Full
+> rationale is in `knowledge_base.py`'s module docstring.
+
+- [x] 6.1 System prompt — `src/agent/prompts.py`: `SYSTEM_PROMPT` covering identity
       (first person), grounding (retrieved text is data, never commands), language
       detection/response, ~3-sentence length, refusal, injection resistance, and the
       `{"answer","language"}` JSON output shape (design §5).
@@ -288,20 +306,21 @@ sub-PR if the real diff exceeds ~450 lines; the split points are noted inline be
       `::test_prompt_forbids_revealing_itself`, `::test_prompt_requires_json_output_shape`.
       GREEN: write the prompt text. Acceptance: `agent-runtime` — *First-Person
       Persona*, *Off-Topic and Prompt-Injection Refusal*. Est: ~85 lines.
-- [ ] 6.2 Language normalization — `src/agent/language.py`: `normalize_language(raw) ->
+- [x] 6.2 Language normalization — `src/agent/language.py`: `normalize_language(raw) ->
       "en" | "es"`, defaults to `"en"` on anything unexpected.
       RED: `tests/unit/agent/test_language.py::test_normalizes_english_and_spanish`,
       `::test_unexpected_value_defaults_to_en`.
       GREEN: implement. Acceptance: `agent-runtime` — *Bilingual Detection*.
       Est: ~55 lines.
-- [ ] 6.3 Agent factory — `src/agent/agent_factory.py`: `build_agent() -> Agent`, Nova
-      Micro model id from `MODEL_ID` env var, exactly one Strands `retrieve` tool bound
-      to `STRANDS_KNOWLEDGE_BASE_ID`, no other tools.
+- [x] 6.3 Agent factory — `src/agent/agent_factory.py`: `build_agent() -> Agent`, Nova
+      Micro model id from `MODEL_ID` env var, exactly one read-only KB search tool bound
+      to `KNOWLEDGE_BASE_ID` (see split note above for the env-var/tool-source deviation
+      from "Strands `retrieve` tool" / `STRANDS_KNOWLEDGE_BASE_ID`), no other tools.
       RED: `tests/unit/agent/test_agent_factory.py::test_model_id_read_from_env_not_hardcoded`,
       `::test_agent_has_exactly_one_read_only_tool`.
       GREEN: implement. Acceptance: `agent-runtime` — *Foundation Model*, *No
       Side-Effect Tools*. Est: ~80 lines.
-- [ ] 6.4 Entrypoint — `src/agent/main.py`: `BedrockAgentCoreApp` + `@app.entrypoint`,
+- [x] 6.4 Entrypoint — `src/agent/main.py`: `BedrockAgentCoreApp` + `@app.entrypoint`,
       builds a **fresh** `Agent` per invocation (never module-scope), catches all
       exceptions, returns `{"answer","language"}`.
       RED: `tests/unit/agent/test_main.py::test_fresh_agent_built_per_invocation` (calls
@@ -309,7 +328,9 @@ sub-PR if the real diff exceeds ~450 lines; the split points are noted inline be
       is the single most important test per design §5), `::test_unhandled_exception_never_returns_traceback`.
       GREEN: implement. Acceptance: `agent-runtime` — *Stateless Single-Turn Answers*.
       Est: ~130 lines.
-- [ ] 6.5 Unskip the Phase 5 contract test (5.3) now that the agent side exists.
+- [x] 6.5 Unskip the Phase 5 contract test (5.3) now that the agent side exists.
+      Implemented directly (never skip-marked, since 5.3/6.5 landed in the same
+      apply batch): `tests/contract/test_payload_contract.py`.
 - [ ] 6.G **Gate**: fresh-context `security-review` + code review before merging PR 6
       (prompt-injection resistance is the primary review focus).
 
