@@ -92,6 +92,22 @@ def test_bedrock_model_receives_configured_max_tokens_and_temperature(monkeypatc
     assert agent.model.kwargs["temperature"] == 0.9
 
 
+def test_bedrock_model_disables_streaming(monkeypatch: pytest.MonkeyPatch) -> None:
+    """BLOCKER security/IAM finding: Strands' `BedrockModel` streams by default
+    (`streaming=True`), which calls `bedrock:InvokeModelWithResponseStream` —
+    an action the agent execution role deliberately does not grant (v1 is
+    non-streaming, `infra/stacks/agent_stack.py`'s `AnswerModelOnly` statement
+    only lists `bedrock:InvokeModel`). Verified via Context7
+    `/strands-agents/docs`, `amazon-bedrock.mdx` "Configure Streaming and
+    Non-Streaming Bedrock Models", 2026-09-16: `BedrockModel(streaming=False)`
+    disables streaming."""
+    monkeypatch.setattr(agent_factory_module, "BedrockModel", _FakeBedrockModel)
+
+    agent = build_agent()
+
+    assert agent.model.kwargs["streaming"] is False
+
+
 def test_bedrock_model_receives_default_max_tokens_and_temperature_when_unset(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

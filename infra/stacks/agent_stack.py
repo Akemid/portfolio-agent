@@ -43,6 +43,14 @@ deploy" risk: if the managed runtime's internal logging path calls
 could surface as a warning or (worst case) a missing log group — it must not affect
 `agent_invocation`'s response, since `src/agent/main.py` never raises on a caught
 exception, but this has not been observed against a real deployment.
+
+Streaming is deliberately out of scope for v1: `agent_factory.build_agent` passes
+`streaming=False` to `BedrockModel` (Strands defaults to `streaming=True`, i.e. the
+Bedrock `ConverseStream` API), so this role's `AnswerModelOnly` statement grants
+only `bedrock:InvokeModel` — never `bedrock:InvokeModelWithResponseStream`. A future
+v2 that adds real streaming responses must add that action (both ARNs) to
+`AnswerModelOnly` before flipping `streaming=True`, or every invocation will fail
+with an `AccessDeniedException`.
 """
 
 from __future__ import annotations
