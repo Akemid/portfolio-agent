@@ -2,7 +2,7 @@ schema: spec-driven
 change: agentcore-migration-v1
 title: AgentCore Migration v1
 created: 2026-09-07
-updated: 2026-09-14
+updated: 2026-09-15
 artifact_store: hybrid
 project: portfolio-agent
 
@@ -536,12 +536,17 @@ phases:
           (5.2) and its error-mapping seam test (5.4), per the PR boundary
           recorded on PR4a and PR5. Task 5.3 (cross-phase payload contract
           test) is deferred — see cut note below.
-        status: implemented_pending_review
+        status: pr_open
+        pr_url: https://github.com/Akemid/portfolio-agent/pull/10
         commits:
           - fa1ab7f feat(config): add Settings.from_env for Lambda configuration
           - a413c47 feat(http): add request_parser for API Gateway v2 events
           - a59485d feat(http): make Set-Cookie Secure flag configurable in success_response
           - 5467ede feat(handler): add Lambda composition root and error-mapping seam test
+          - c6d45de fix(handler): map malformed base64/invalid UTF-8 body to a generic 400
+          - c8299be fix(handler): reject requests with a missing or blank source IP
+          - 77cbfef fix(config): validate ALLOWED_ORIGINS entries at cold start
+          - 35d5a4e test(handler): cover message_prefix uses the extracted message on 429
         tasks_completed: ["4.1", "4.2", "5.2", "5.4"]
         cut: >-
           Task 5.3 (tests/contract/test_payload_contract.py) is deferred to
@@ -659,6 +664,182 @@ phases:
           assignment point before restoring it). Full gate (ruff
           check/format, mypy src, pytest) clean after every commit; 213
           tests pass (up from 192 baseline on this branch).
+      - pr: PR6
+        branch: feat/strands-agent
+        base: feat/lambda-handler
+        scope: >-
+          Phase 6 — the Strands agent that runs inside AgentCore Runtime
+          (src/agent/prompts.py, language.py, knowledge_base.py,
+          settings.py, agent_factory.py, main.py), the deferred
+          dependency-groups split (infra/agent) that PR5b's apply-progress
+          flagged as out of scope, and the cross-phase payload contract
+          test (5.3/6.5).
+        status: implemented_pending_review
+        commits:
+          - c6fb734 chore(deps): split infra and agent dependency groups
+          - fae194f feat(agent): add system prompt for the portfolio chat agent
+          - 9a91719 feat(agent): add normalize_language for the agent's language field
+          - 11fcaa2 feat(agent): add read-only search_portfolio Knowledge Base tool
+          - eab7f13 feat(agent): add AgentSettings and build_agent factory
+          - 4728814 feat(agent): add AgentCore Runtime entrypoint
+          - 1b8a1d9 test(contract): add cross-phase payload contract test (5.3, 6.5)
+          - 78089b5 test(agent): cover blank/non-string answer fallback in _parse_model_output
+          - 08d0226 docs(sdd): tick Phase 6 tasks and record the PR6 apply batch
+        tasks_completed: ["5.3", "6.1", "6.2", "6.3", "6.4", "6.5"]
+        deviation_from_design: >-
+          design.md SS5 names "the Strands `retrieve` tool" (from the
+          community `strands-agents-tools` package), configured via
+          `STRANDS_KNOWLEDGE_BASE_ID`. This batch added that dependency
+          (`uv add --group agent strands-agents-tools`) and measured the
+          result before writing any code: it resolved and installed ~20
+          unrelated transitive packages (pillow, sympy, aiohttp, slack-bolt,
+          slack-sdk, beautifulsoup4, markdownify, aws-requests-auth, dill,
+          mpmath, prompt-toolkit, tenacity, yarl, frozenlist, aiosignal,
+          aiohappyeyeballs, multidict, propcache, soupsieve, wcwidth) because
+          `strands-agents-tools` bundles every community tool (Slack,
+          browser, memory backends, shell, RAG, ...) behind one install, not
+          just `retrieve`. This directly violates design.md's own, more
+          specific SS8 RQ-5 dependency floor ("`strands-agents`,
+          `bedrock-agentcore`, `boto3`, nothing else. `pip list` audited in
+          CI") — a requirement that exists to keep the AgentCore direct code
+          deployment zip small and cold start fast (the same RQ-5 section
+          this design document uses to justify direct code deployment over
+          containers in the first place). Given the conflict between SS5's
+          illustrative tool choice and SS8's explicit, testable, narrower
+          constraint, RQ-5 was treated as authoritative: the dependency was
+          removed again (`uv remove --group agent strands-agents-tools`,
+          confirmed back to the PR5b baseline dependency set) and replaced
+          with a small own `@tool` (`src/agent/knowledge_base.py`,
+          `build_search_tool`) directly against `bedrock-agent-runtime`'s
+          `Retrieve` API — zero new dependencies. The env var is
+          `KNOWLEDGE_BASE_ID` (via the new `AgentSettings.from_env`), not
+          `STRANDS_KNOWLEDGE_BASE_ID`, since that name was specific to the
+          now-unused community tool's own internal env lookup. Full
+          rationale is in `knowledge_base.py`'s module docstring; tasks.md's
+          6.1-6.3 task text was updated inline to match.
+        docs_verified:
+          agentcore_entrypoint: >-
+            https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-get-started-code-deploy-python.html
+            — direct code deployment requires an entrypoint .py using
+            `@app.entrypoint` from `bedrock_agentcore.runtime.BedrockAgentCoreApp`
+            (confirmed importable from the pinned `bedrock-agentcore==1.22.0`)
+            or `/invocations` POST + `/ping` GET; payload is a plain dict
+            handed to the registered function unchanged, return value must
+            be JSON-serializable. `BedrockAgentCoreApp.entrypoint` (source
+            inspected locally) registers the function and returns it
+            UNCHANGED (adds a `.run` attribute) — so `agent_invocation` is
+            callable directly in tests with no HTTP layer involved.
+          strands_agent_construction: >-
+            Context7 `/strands-agents/docs` — `Agent(model=BedrockModel(model_id=...,
+            region_name=...), system_prompt=..., tools=[...])`; a fresh
+            `Agent(...)` per call is exactly design.md D5. `str(agent(prompt))`
+            concatenates the response's text content blocks (source of
+            `AgentResult.__str__` inspected locally) — used to extract the
+            model's raw JSON output text.
+          strands_tool_decorator: >-
+            `@tool(name=...)` (Context7 `/strands-agents/docs` + local
+            `strands.tools.decorator.tool` docstring) — a decorated function
+            "still works as a normal function when called directly," so
+            `search_portfolio("query")` is directly unit-testable without an
+            `Agent`; `.tool_name` exposes the registered name for the
+            "exactly one tool" assertion.
+          bedrock_agent_runtime_retrieve: >-
+            `bedrock-agent-runtime` client `retrieve(knowledgeBaseId=...,
+            retrievalQuery={"text": ...}, retrievalConfiguration=
+            {"vectorSearchConfiguration": {"numberOfResults": N}})` ->
+            `retrievalResults[].content.text` (existing project convention
+            from the orchestrator's brief, applied as-is; no boto3-stubs
+            entry exists yet for `bedrock-agent-runtime`, so the client is
+            typed via a local `RetrieveClient` Protocol instead of adding a
+            stub dependency).
+        local_gate: >-
+          ruff check clean, ruff format clean, mypy src clean, 267 tests
+          pass (up from 213 baseline on feat/lambda-handler), coverage
+          99.86% on touched modules, project total 99.86%
+          (--cov=src --cov-fail-under=85). Only one line is uncovered in the
+          whole project: `src/agent/main.py`'s `if __name__ == "__main__":
+          app.run()` guard.
+        diff_stat: >-
+          git diff --stat feat/lambda-handler..feat/strands-agent -- .
+          ':(exclude)uv.lock': 16 files changed, 875 insertions(+), 12
+          deletions(-); src/ only (excludes tests, tasks.md, pyproject.toml):
+          6 files changed, 337 insertions(+) — under the ~380-line PR6
+          estimate and the 400-line code-only budget.
+        env_vars_new:
+          - "MODEL_ID (required; amazon.nova-micro-v1:0 or the us.amazon.nova-micro-v1:0 inference profile)"
+          - "KNOWLEDGE_BASE_ID (required)"
+          - "AWS_REGION (default us-east-1)"
+          - "RETRIEVAL_TOP_K (default 4, clamped 1..10)"
+          - "MAX_TOKENS (default 512, clamped 64..2048 — added in the PR6 review-fixes pass)"
+          - "TEMPERATURE (default 0.2, clamped 0..1 — added in the PR6 review-fixes pass)"
+          - "MAX_ANSWER_CHARS (default 1200 — added in the PR6 review-fixes pass; read independently of AgentSettings.from_env)"
+        review_fixes: >-
+          Six test-first fixes applied on top of this batch, one commit per
+          finding (RED confirmed before each GREEN, full gate clean after
+          each): (1) MAJOR/MEDIUM — bound generation via new MAX_TOKENS
+          (default 512, 64..2048) and TEMPERATURE (default 0.2, 0..1) on
+          AgentSettings, passed to BedrockModel(max_tokens=...,
+          temperature=...); hard-capped the parsed answer to
+          MAX_ANSWER_CHARS (default 1200), truncated at a sentence/word
+          boundary in main.py's output parser. (2) MEDIUM — retrieved
+          passages now wrapped in `<passage source="portfolio">...</passage>`
+          (escaping a literal closing tag in the text), with one new system
+          prompt sentence stating passage content is reference data, never
+          instructions. (3) LOW — RETRIEVAL_TOP_K clamped to 1..10 with
+          ConfigError outside range (the clamp landed inside finding 1's
+          shared range-check helper; this commit added the dedicated
+          boundary/out-of-range test coverage, RED-verified via a temporary
+          revert). (4) LOW — prompts over 1000 chars are rejected with the
+          generic fallback response before build_agent()/the agent are
+          called; documented and tested that language_hint is accepted and
+          intentionally unused in v1. (5) docs — design.md SS5 updated to
+          describe the own @tool against bedrock-agent-runtime.Retrieve and
+          the rejection of strands-agents-tools, plus a new environment
+          variables table. (6) NIT — fakes now mimic a real Strands
+          response's trailing newline (comment explains the .strip()
+          reliance in main.py); new factory test locks Agent(...) to
+          exactly {model, system_prompt, tools} with one tool (verified via
+          Context7 /strands-agents/docs that there is no directory-based
+          tool-loading argument). 300 tests pass (up from 267 at PR6 apply
+          time); full gate (ruff check/format, mypy src, pytest) clean
+          after every commit. `git diff --stat
+          feat/lambda-handler..feat/strands-agent -- .
+          ':(exclude)uv.lock'` now: 19 files changed, 1503 insertions(+),
+          29 deletions(-). PR8 needs to add the three new env vars above to
+          the AgentCore Runtime's environment configuration.
+        iam_for_pr8: >-
+          Agent execution role (design.md SS9.2, unchanged by this batch —
+          recorded here for PR8's convenience): `bedrock:InvokeModel` scoped
+          to BOTH the Nova Micro foundation-model ARN
+          (`arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-micro-v1:0`)
+          AND the `us.amazon.nova-micro-v1:0` inference-profile ARN (verify
+          the exact profile id with `aws bedrock list-inference-profiles`
+          before first deploy, per design.md RQ-1); `bedrock:Retrieve`
+          scoped to the one Knowledge Base ARN (matches this batch's one
+          `search_portfolio` tool call, one KB, no other `bedrock:*`
+          action); `s3:GetObject` on the agent code asset only (PR8's
+          `aws_s3_assets.Asset`). No `bedrock:InvokeModelWithResponseStream`
+          (v1 is non-streaming, matching `str(agent(prompt))`'s synchronous
+          use). Trust policy: `aws:SourceAccount`/`aws:SourceArn` conditions
+          per design.md SS9.2 and `agents-harden`.
+        packaging_deferred_to_pr9: >-
+          `scripts/build_agent.sh` (task 8.1) was not written in this batch
+          — it is a Phase 8 task, not Phase 6, and the PR6 boundary given
+          for this batch was Phase 6 + the dependency-groups split only.
+          Docs verified for when PR9 writes it: direct code deployment's
+          "Custom zip + boto3" path (same URL as agentcore_entrypoint above)
+          requires `uv pip install --python-platform aarch64-manylinux2014
+          --python-version 3.12 --target=<dir> --only-binary=:all:` (AgentCore
+          Runtime is **arm64-only** — this is a hard requirement, not a
+          preference, worth flagging loudly to PR9/PR8), then zip the
+          installed dependencies plus `src/agent`'s own files at the zip
+          root (`main.py` must be importable as a top-level module, not
+          `agent.main`, matching the entrypoint examples). Zip package
+          limits: 250 MB zipped / 750 MB unzipped. `uv export --group agent`
+          (or `uv pip install --target ... -r pyproject.toml` scoped to the
+          `agent` group after this batch's split) is now the correct source
+          of the agent's own dependency list, separate from the Lambda's
+          `boto3`-only runtime `dependencies`.
   verify:
     status: pending
     depends_on: [apply]
