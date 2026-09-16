@@ -12,6 +12,9 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from urllib.parse import urlsplit
+
+_LOCAL_HTTP_HOSTS = frozenset({"localhost", "127.0.0.1"})
 
 _DEFAULT_AWS_REGION = "us-east-1"
 # `chat-endpoint` spec, *CORS Restriction*: production origin plus one
@@ -72,7 +75,33 @@ def _split_origins(raw: str | None) -> tuple[str, ...]:
     if not raw:
         return _DEFAULT_ALLOWED_ORIGINS
     origins = tuple(origin.strip() for origin in raw.split(",") if origin.strip())
-    return origins or _DEFAULT_ALLOWED_ORIGINS
+    if not origins:
+        return _DEFAULT_ALLOWED_ORIGINS
+    for origin in origins:
+        _validate_origin(origin)
+    return origins
+
+
+def _validate_origin(origin: str) -> None:
+    """Raise `ConfigError` unless `origin` is a bare, absolute origin.
+
+    `ALLOWED_ORIGINS` is operator-controlled (an env var, never client
+    input), so naming the offending entry in the error is safe. Required
+    shape: scheme `https` (or `http`, but only for a `localhost`/`127.0.0.1`
+    host, to support the spec's env-configurable dev origin), no path,
+    query, or fragment, no wildcard, and no trailing slash.
+    """
+    if origin.endswith("/"):
+        raise ConfigError(f"ALLOWED_ORIGINS entry must not have a trailing slash: {origin!r}")
+    if "*" in origin:
+        raise ConfigError(f"ALLOWED_ORIGINS entry must not contain a wildcard: {origin!r}")
+    parsed = urlsplit(origin)
+    if parsed.scheme not in ("https", "http") or not parsed.netloc:
+        raise ConfigError(f"ALLOWED_ORIGINS entry must be an absolute https:// origin: {origin!r}")
+    if parsed.path or parsed.query or parsed.fragment:
+        raise ConfigError(f"ALLOWED_ORIGINS entry must not include a path, query, or fragment: {origin!r}")
+    if parsed.scheme == "http" and parsed.hostname not in _LOCAL_HTTP_HOSTS:
+        raise ConfigError(f"ALLOWED_ORIGINS entry must use https unless the host is localhost/127.0.0.1: {origin!r}")
 
 
 def _optional_int(environ: Mapping[str, str], name: str, default: int) -> int:

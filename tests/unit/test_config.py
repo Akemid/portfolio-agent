@@ -77,6 +77,40 @@ def test_allowed_origins_falls_back_to_default_when_only_commas_and_whitespace()
     assert settings.allowed_origins == ("https://sergiomondragon.com",)
 
 
+@pytest.mark.parametrize(
+    "value",
+    [
+        "https://sergiomondragon.com",
+        "http://localhost:4321",
+        "http://127.0.0.1:3000",
+        "https://sergiomondragon.com,http://localhost:4321",
+    ],
+)
+def test_allowed_origins_accepts_valid_entries(value: str) -> None:
+    settings = Settings.from_env({**_REQUIRED_ENV, "ALLOWED_ORIGINS": value})
+
+    assert settings.allowed_origins == tuple(value.split(","))
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "http://example.com",
+        "https://example.com/",
+        "https://example.com/path",
+        "https://example.com?query=1",
+        "https://example.com#fragment",
+        "https://*.example.com",
+        "example.com",
+        "ftp://example.com",
+        "https://sergiomondragon.com,http://example.com",
+    ],
+)
+def test_allowed_origins_rejects_invalid_entries(value: str) -> None:
+    with pytest.raises(ConfigError):
+        Settings.from_env({**_REQUIRED_ENV, "ALLOWED_ORIGINS": value})
+
+
 def test_bad_session_daily_limit_raises_config_error() -> None:
     env = {**_REQUIRED_ENV, "SESSION_DAILY_LIMIT": "not-a-number"}
 
