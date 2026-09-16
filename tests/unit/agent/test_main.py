@@ -165,3 +165,36 @@ def test_answer_truncation_hard_cuts_a_single_long_word() -> None:
 def test_answer_within_the_limit_is_returned_unchanged() -> None:
     text = "short answer."
     assert main._truncate_answer(text, max_chars=1200) == text
+
+
+def test_overly_long_prompt_is_rejected_before_building_an_agent(monkeypatch: pytest.MonkeyPatch) -> None:
+    """LOW finding (defense in depth): a 1001+ char prompt is rejected with
+    the generic fallback response before `build_agent`/the agent are ever
+    invoked, independent of any model-side length limit."""
+    calls = []
+    monkeypatch.setattr(main, "build_agent", lambda: calls.append(1) or _json_agent("x", "en"))
+
+    result = main.agent_invocation({"prompt": "x" * 1001})
+
+    assert calls == []
+    assert result["language"] == "en"
+    assert result["answer"]
+
+
+def test_prompt_at_exactly_1000_chars_is_accepted(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(main, "build_agent", lambda: _json_agent("hi", "en"))
+
+    result = main.agent_invocation({"prompt": "x" * 1000})
+
+    assert result == {"answer": "hi", "language": "en"}
+
+
+def test_bogus_language_hint_is_ignored_not_an_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`language_hint` is accepted in the payload and intentionally unused in
+    v1 (`design.md` §6) — the agent always detects the language itself, so a
+    bogus value must never cause an error or change behavior."""
+    monkeypatch.setattr(main, "build_agent", lambda: _json_agent("I built a chatbot.", "es"))
+
+    result = main.agent_invocation({"prompt": "que hiciste?", "language_hint": "not-a-real-language"})
+
+    assert result == {"answer": "I built a chatbot.", "language": "es"}

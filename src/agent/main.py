@@ -26,6 +26,12 @@ app = BedrockAgentCoreApp()
 
 _FALLBACK_ANSWER = "Sorry, I could not process that question right now. Please try again shortly."
 _SENTENCE_ENDINGS = (".", "!", "?")
+# LOW finding, defense in depth: reject an oversized prompt before building
+# or calling the agent at all — independent of whatever length limit the
+# model or its system prompt enforce, so a huge payload never reaches
+# Bedrock (cost/availability risk) just because the model-side instruction
+# was bypassed or ignored.
+_MAX_PROMPT_CHARS = 1000
 
 
 @app.entrypoint
@@ -40,9 +46,15 @@ def agent_invocation(payload: dict[str, Any]) -> dict[str, str]:
     the single most important line in the agent: a warm, session-affine
     microVM must never accumulate conversation history across a visitor's
     questions (`agent-runtime` spec, *Stateless Single-Turn Answers*).
+
+    `payload.get("language_hint")` is accepted but intentionally unused in
+    v1 (design.md §6): the field exists only so a future client-side hint
+    can be added without a contract break, and the agent always detects the
+    language itself — a bogus or malformed hint is silently ignored, never
+    an error.
     """
     prompt = payload.get("prompt")
-    if not isinstance(prompt, str) or not prompt.strip():
+    if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > _MAX_PROMPT_CHARS:
         return _fallback_response()
 
     try:
