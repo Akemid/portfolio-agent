@@ -114,3 +114,16 @@ def test_json_output_missing_answer_key_falls_back_to_raw_text(monkeypatch: pyte
 
     assert result["answer"] == raw
     assert result["language"] == "en"
+
+
+@pytest.mark.parametrize("bad_answer", ["", "   ", 42, None])
+def test_json_output_with_blank_or_non_string_answer_falls_back_to_raw_text(
+    bad_answer: object, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    raw = json.dumps({"answer": bad_answer, "language": "es"})
+    monkeypatch.setattr(main, "build_agent", lambda: _FakeAgent(raw))
+
+    result = main.agent_invocation({"prompt": "hello"})
+
+    assert result["answer"] == raw
+    assert result["language"] == "en"
