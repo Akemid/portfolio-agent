@@ -3,8 +3,10 @@
 # (task 8.1; design.md SS3, SS8 RQ-2 packaging flow).
 #
 # Produces build/agent/ (the `agent` dependency group's arm64 wheels installed at
-# its root, plus src/agent's own modules copied on top so `main.py` sits at the
-# root — never `agent/main.py`, matching the `EntryPoint: ["main.py"]` used by
+# its root, `src/agent`'s own modules copied to `agent/` underneath — preserving
+# the package so its internal `from agent.x import y` imports resolve — plus a
+# root `main.py` shim (`scripts/agent_entrypoint.py`, `from agent.main import
+# app`) so the zip root itself matches the `EntryPoint: ["main.py"]` used by
 # `infra/stacks/agent_stack.py`) and zips it deterministically into build/agent.zip,
 # the file `infra/stacks/agent_stack.py`'s `aws_s3_assets.Asset` wraps.
 #
@@ -14,32 +16,51 @@
 # root; the documented package size limit is 250 MB zipped / 750 MB unzipped —
 # https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-get-started-code-deploy-python.html
 #
-# Usage: scripts/build_agent.sh
+# Usage: scripts/build_agent.sh [build_dir]
+#   build_dir defaults to build/agent; override only for tests (the zip and
+#   requirements files are always written next to it).
+# Env: BUILD_SKIP_DEPS=1 skips the export/install steps (test-only fast path).
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BUILD_DIR="${ROOT_DIR}/build/agent"
-ZIP_PATH="${ROOT_DIR}/build/agent.zip"
-REQUIREMENTS_PATH="${ROOT_DIR}/build/agent-requirements.txt"
+# Optional first argument overrides the build directory (test-only; production
+# usage takes no arguments). The zip/requirements outputs always live next to
+# whichever build directory is in effect.
+BUILD_DIR="${1:-${ROOT_DIR}/build/agent}"
+OUT_DIR="$(dirname "${BUILD_DIR}")"
+ZIP_PATH="${OUT_DIR}/agent.zip"
+REQUIREMENTS_PATH="${OUT_DIR}/agent-requirements.txt"
 # Documented AgentCore Runtime direct-code-deployment limit (zipped size).
 MAX_ZIP_BYTES=$((250 * 1024 * 1024))
 
 rm -rf "${BUILD_DIR}" "${ZIP_PATH}"
 mkdir -p "${BUILD_DIR}"
 
-echo "Exporting the 'agent' dependency group (strands-agents, bedrock-agentcore)..."
-uv export --project "${ROOT_DIR}" --only-group agent --no-hashes -o "${REQUIREMENTS_PATH}"
+if [ -z "${BUILD_SKIP_DEPS:-}" ]; then
+  echo "Exporting the 'agent' dependency group (strands-agents, bedrock-agentcore)..."
+  uv export --project "${ROOT_DIR}" --only-group agent --no-hashes -o "${REQUIREMENTS_PATH}"
 
-echo "Installing arm64 (aarch64-manylinux2014) wheels into ${BUILD_DIR}..."
-uv pip install \
-  --target "${BUILD_DIR}" \
-  --python-platform aarch64-manylinux2014 \
-  --python-version 3.12 \
-  --only-binary :all: \
-  -r "${REQUIREMENTS_PATH}"
+  echo "Installing arm64 (aarch64-manylinux2014) wheels into ${BUILD_DIR}..."
+  uv pip install \
+    --target "${BUILD_DIR}" \
+    --python-platform aarch64-manylinux2014 \
+    --python-version 3.12 \
+    --only-binary :all: \
+    -r "${REQUIREMENTS_PATH}"
+else
+  # Test-only fast path (BUILD_SKIP_DEPS=1): the caller's environment already
+  # has the `agent` dependency group importable (e.g. via `uv run`), so
+  # skip the network-dependent export/install steps entirely.
+  echo "BUILD_SKIP_DEPS=1: skipping dependency export/install."
+fi
 
-echo "Copying src/agent to the zip root..."
-cp -R "${ROOT_DIR}/src/agent/." "${BUILD_DIR}/"
+echo "Copying src/agent to ${BUILD_DIR}/agent (preserving the package so its"
+echo "internal 'from agent.x import y' imports resolve)..."
+mkdir -p "${BUILD_DIR}/agent"
+cp -R "${ROOT_DIR}/src/agent/." "${BUILD_DIR}/agent/"
+
+echo "Writing the zip-root main.py entrypoint shim (scripts/agent_entrypoint.py)..."
+cp "${ROOT_DIR}/scripts/agent_entrypoint.py" "${BUILD_DIR}/main.py"
 
 echo "Stripping __pycache__ (bytecode from this build machine is not portable)..."
 find "${BUILD_DIR}" -type d -name "__pycache__" -prune -exec rm -rf {} +
