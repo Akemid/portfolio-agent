@@ -159,7 +159,25 @@ class DataStack(Stack):
                 resources=[f"arn:aws:bedrock:{Aws.REGION}::foundation-model/{EMBEDDING_MODEL_ID}"],
             )
         )
-        self.content_bucket.grant_read(role)
+        # `grant_read()` emits wildcard ACTIONS (`s3:GetObject*`, `s3:GetBucket*`,
+        # `s3:List*`) even though its resources are scoped — least privilege requires the
+        # exact actions the KB service needs, scoped to the `content/*` prefix, per
+        # https://docs.aws.amazon.com/bedrock/latest/userguide/kb-permissions.html.
+        role.add_to_policy(
+            iam.PolicyStatement(
+                sid="ReadContentObjects",
+                actions=["s3:GetObject"],
+                resources=[self.content_bucket.arn_for_objects("content/*")],
+            )
+        )
+        role.add_to_policy(
+            iam.PolicyStatement(
+                sid="ListContentPrefix",
+                actions=["s3:ListBucket"],
+                resources=[self.content_bucket.bucket_arn],
+                conditions={"StringLike": {"s3:prefix": ["content/*"]}},
+            )
+        )
         role.add_to_policy(
             iam.PolicyStatement(
                 sid="OneVectorIndex",

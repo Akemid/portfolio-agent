@@ -200,6 +200,66 @@ def test_kb_role_has_no_wildcard_resource() -> None:
             assert "*" not in resources, statement
 
 
+def _all_policy_statements(template: Template) -> list[dict]:
+    policies = template.find_resources("AWS::IAM::Policy")
+    statements: list[dict] = []
+    for policy in policies.values():
+        statements.extend(policy["Properties"]["PolicyDocument"]["Statement"])
+    return statements
+
+
+def test_no_policy_statement_grants_a_wildcard_action() -> None:
+    """`grant_read()`-style helpers emit wildcard ACTIONS (e.g. `s3:GetObject*`) even when
+
+    the resource is scoped — a `Resource: "*"` check alone does not catch this. Every
+    action string, in every statement, in every inline policy in the stack must be an
+    exact IAM action with no trailing `*`.
+    """
+    template = _synth_template()
+
+    for statement in _all_policy_statements(template):
+        action = statement["Action"]
+        actions = action if isinstance(action, list) else [action]
+        for single_action in actions:
+            assert not single_action.endswith("*"), statement
+
+
+def test_kb_role_s3_permissions_are_scoped_to_content_prefix() -> None:
+    """The KB role's S3 access is exactly: `GetObject` on `content/*` objects and
+
+    `ListBucket` on the bucket scoped to the `content/*` prefix — per
+    https://docs.aws.amazon.com/bedrock/latest/userguide/kb-permissions.html. No
+    `grant_read()`-style wildcard actions (`s3:GetObject*`, `s3:GetBucket*`,
+    `s3:List*`) or unscoped `ListBucket`.
+    """
+    template = _synth_template()
+
+    buckets = template.find_resources("AWS::S3::Bucket")
+    assert len(buckets) == 1, "expected exactly one S3 bucket (the content bucket)"
+    bucket_logical_id = next(iter(buckets))
+    bucket_arn = {"Fn::GetAtt": [bucket_logical_id, "Arn"]}
+    content_objects_arn = {"Fn::Join": ["", [bucket_arn, "/content/*"]]}
+
+    def _is_s3_statement(statement: dict) -> bool:
+        action = statement["Action"]
+        actions = action if isinstance(action, list) else [action]
+        return any(single_action.startswith("s3:") for single_action in actions)
+
+    s3_statements = [s for s in _all_policy_statements(template) if _is_s3_statement(s)]
+
+    get_object_statements = [s for s in s3_statements if s["Action"] == "s3:GetObject"]
+    assert len(get_object_statements) == 1, s3_statements
+    assert get_object_statements[0]["Resource"] == content_objects_arn, get_object_statements[0]
+
+    list_bucket_statements = [s for s in s3_statements if s["Action"] == "s3:ListBucket"]
+    assert len(list_bucket_statements) == 1, s3_statements
+    list_bucket_statement = list_bucket_statements[0]
+    assert list_bucket_statement["Resource"] == bucket_arn, list_bucket_statement
+    assert list_bucket_statement["Condition"] == {"StringLike": {"s3:prefix": ["content/*"]}}, list_bucket_statement
+
+    assert len(s3_statements) == 2, s3_statements
+
+
 def test_kb_role_trust_policy_scopes_to_bedrock_with_confused_deputy_conditions() -> None:
     template = _synth_template()
 
