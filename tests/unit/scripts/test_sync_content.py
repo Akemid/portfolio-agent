@@ -25,6 +25,7 @@ from sync_content import (
     IngestionResult,
     IngestionTimeoutError,
     discover_content_files,
+    main,
     resolve_data_source_id,
     resolve_stack_outputs,
     run_sync,
@@ -423,6 +424,94 @@ def test_run_sync_returns_0_on_complete_and_prints_summary(tmp_path: Path) -> No
     assert "COMPLETE" in stdout.getvalue()
 
 
+def test_run_sync_default_output_never_prints_the_bucket_name(tmp_path: Path) -> None:
+    """`bucket-1` is a stand-in for a real bucket name — never leak it into
+    default (non-verbose) output, only the object count and key prefix."""
+    (tmp_path / "cv").mkdir()
+    (tmp_path / "cv" / "resume.pdf").write_bytes(b"%PDF-1.4")
+    stdout = io.StringIO()
+
+    run_sync(
+        content_dir=tmp_path,
+        s3_client=_FakeS3Client(),
+        bedrock_agent_client=_FakeBedrockAgentClient([_job("COMPLETE")]),
+        bucket_name="my-secret-bucket-name",
+        knowledge_base_id="kb-1",
+        data_source_id="ds-1",
+        sleep_fn=lambda _seconds: None,
+        stdout=stdout,
+        stderr=io.StringIO(),
+    )
+
+    output = stdout.getvalue()
+    assert "my-secret-bucket-name" not in output
+    assert "content/" in output
+
+
+def test_run_sync_verbose_output_includes_full_s3_uri(tmp_path: Path) -> None:
+    (tmp_path / "cv").mkdir()
+    (tmp_path / "cv" / "resume.pdf").write_bytes(b"%PDF-1.4")
+    stdout = io.StringIO()
+
+    run_sync(
+        content_dir=tmp_path,
+        s3_client=_FakeS3Client(),
+        bedrock_agent_client=_FakeBedrockAgentClient([_job("COMPLETE")]),
+        bucket_name="my-secret-bucket-name",
+        knowledge_base_id="kb-1",
+        data_source_id="ds-1",
+        verbose=True,
+        sleep_fn=lambda _seconds: None,
+        stdout=stdout,
+        stderr=io.StringIO(),
+    )
+
+    assert "s3://my-secret-bucket-name/content/cv/resume.pdf" in stdout.getvalue()
+
+
+def test_run_sync_dry_run_default_output_never_prints_the_bucket_name(tmp_path: Path) -> None:
+    (tmp_path / "cv").mkdir()
+    (tmp_path / "cv" / "resume.pdf").write_bytes(b"%PDF-1.4")
+    stdout = io.StringIO()
+
+    run_sync(
+        content_dir=tmp_path,
+        s3_client=_FakeS3Client(),
+        bedrock_agent_client=_FakeBedrockAgentClient([_job("COMPLETE")]),
+        bucket_name="my-secret-bucket-name",
+        knowledge_base_id="kb-1",
+        data_source_id="ds-1",
+        dry_run=True,
+        sleep_fn=lambda _seconds: None,
+        stdout=stdout,
+        stderr=io.StringIO(),
+    )
+
+    assert "my-secret-bucket-name" not in stdout.getvalue()
+
+
+def test_run_sync_dry_run_verbose_output_includes_full_s3_uri(tmp_path: Path) -> None:
+    (tmp_path / "cv").mkdir()
+    (tmp_path / "cv" / "resume.pdf").write_bytes(b"%PDF-1.4")
+    stdout = io.StringIO()
+
+    run_sync(
+        content_dir=tmp_path,
+        s3_client=_FakeS3Client(),
+        bedrock_agent_client=_FakeBedrockAgentClient([_job("COMPLETE")]),
+        bucket_name="my-secret-bucket-name",
+        knowledge_base_id="kb-1",
+        data_source_id="ds-1",
+        dry_run=True,
+        verbose=True,
+        sleep_fn=lambda _seconds: None,
+        stdout=stdout,
+        stderr=io.StringIO(),
+    )
+
+    assert "s3://my-secret-bucket-name/content/cv/resume.pdf" in stdout.getvalue()
+
+
 def test_run_sync_dry_run_discovers_and_prints_keys_without_uploading(tmp_path: Path) -> None:
     (tmp_path / "cv").mkdir()
     (tmp_path / "cv" / "resume.pdf").write_bytes(b"%PDF-1.4")
@@ -446,7 +535,7 @@ def test_run_sync_dry_run_discovers_and_prints_keys_without_uploading(tmp_path: 
     assert exit_code == 0
     assert s3_client.calls == []
     assert bedrock_client.start_calls == []
-    assert "content/cv/resume.pdf" in stdout.getvalue()
+    assert "content/" in stdout.getvalue()
 
 
 def test_run_sync_returns_1_on_failed_status(tmp_path: Path) -> None:
@@ -468,3 +557,64 @@ def test_run_sync_returns_1_on_failed_status(tmp_path: Path) -> None:
 
     assert exit_code == 1
     assert "bad" in stderr.getvalue()
+
+
+# --- main: value-source reporting (--verbose only) -----------------------------
+
+
+class _FakeCfnClientForMain:
+    def describe_stacks(self, **_kwargs: Any) -> dict[str, Any]:
+        return {"Stacks": [{"Outputs": [{"OutputKey": "KnowledgeBaseId", "OutputValue": "kb-1"}]}]}
+
+
+class _FakeBedrockAgentClientForMain:
+    def list_data_sources(self, **_kwargs: Any) -> dict[str, Any]:
+        return {"dataSourceSummaries": [{"dataSourceId": "ds-1", "name": "portfolio-agent-content"}]}
+
+    def start_ingestion_job(self, **_kwargs: Any) -> dict[str, Any]:
+        return {"ingestionJob": _job("COMPLETE")}
+
+
+class _FakeS3ClientForMain:
+    def put_object(self, **_kwargs: Any) -> dict[str, Any]:
+        return {}
+
+
+def _fake_boto3_client(service_name: str, region_name: str | None = None) -> Any:
+    return {
+        "cloudformation": _FakeCfnClientForMain(),
+        "bedrock-agent": _FakeBedrockAgentClientForMain(),
+        "s3": _FakeS3ClientForMain(),
+    }[service_name]
+
+
+def test_main_default_output_never_mentions_value_sources(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (tmp_path / "cv").mkdir()
+    (tmp_path / "cv" / "resume.pdf").write_bytes(b"%PDF-1.4")
+    monkeypatch.setattr(boto3, "client", _fake_boto3_client)
+
+    exit_code = main(["--content-dir", str(tmp_path), "--bucket-name", "my-secret-bucket-name"])
+
+    assert exit_code == 0
+    out = capsys.readouterr().out
+    assert "resolved from" not in out
+    assert "my-secret-bucket-name" not in out
+
+
+def test_main_verbose_output_reports_cli_override_vs_stack_output(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (tmp_path / "cv").mkdir()
+    (tmp_path / "cv" / "resume.pdf").write_bytes(b"%PDF-1.4")
+    monkeypatch.setattr(boto3, "client", _fake_boto3_client)
+
+    exit_code = main(["--content-dir", str(tmp_path), "--bucket-name", "my-secret-bucket-name", "--verbose"])
+
+    assert exit_code == 0
+    out = capsys.readouterr().out
+    assert "bucket_name resolved from: CLI override" in out
+    assert "knowledge_base_id resolved from: stack output" in out
+    assert "data_source_id resolved from: stack output" in out
+    assert "my-secret-bucket-name" in out

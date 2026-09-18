@@ -219,6 +219,18 @@ def start_and_wait_for_ingestion(
     )
 
 
+def _print_key_summary(stdout: IO[str], verb: str, bucket_name: str, keys: Sequence[str], verbose: bool) -> None:
+    """Print what was (or would be) uploaded — never the bucket name by
+    default, since it identifies a specific AWS account's resource and has
+    no reason to appear in routine operator output. `--verbose` trades that
+    safety for full `s3://bucket/key` detail."""
+    if verbose:
+        for key in keys:
+            print(f"{verb} s3://{bucket_name}/{key}", file=stdout)
+    else:
+        print(f"{verb} {len(keys)} file(s) under content/", file=stdout)
+
+
 def run_sync(
     *,
     content_dir: Path,
@@ -228,6 +240,7 @@ def run_sync(
     knowledge_base_id: str,
     data_source_id: str,
     dry_run: bool = False,
+    verbose: bool = False,
     sleep_fn: Callable[[float], None] = time.sleep,
     poll_interval_seconds: float = DEFAULT_POLL_INTERVAL_SECONDS,
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
@@ -239,7 +252,9 @@ def run_sync(
 
     `dry_run=True` stops right after discovery: it prints the planned S3 keys
     and returns 0 without ever calling `s3_client` or `bedrock_agent_client`
-    — a safe way to preview a sync before it touches anything."""
+    — a safe way to preview a sync before it touches anything. `verbose=True`
+    prints full `s3://bucket/key` lines instead of just a count (see
+    `_print_key_summary`)."""
     try:
         files = discover_content_files(content_dir)
     except ContentValidationError as exc:
@@ -248,13 +263,11 @@ def run_sync(
 
     if dry_run:
         planned_keys = [compute_s3_key(content_dir, path) for path in files]
-        print(f"Dry run: would upload {len(planned_keys)} file(s):", file=stdout)
-        for key in planned_keys:
-            print(f"  {key}", file=stdout)
+        _print_key_summary(stdout, "Would upload", bucket_name, planned_keys, verbose)
         return 0
 
     uploaded_keys = upload_files(s3_client, bucket_name, content_dir, files)
-    print(f"Uploaded {len(uploaded_keys)} file(s) to s3://{bucket_name}/content/", file=stdout)
+    _print_key_summary(stdout, "Uploaded", bucket_name, uploaded_keys, verbose)
 
     try:
         result = start_and_wait_for_ingestion(
@@ -295,7 +308,22 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         action="store_true",
         help="discover and print the planned S3 keys, then exit — no upload, no ingestion",
     )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="show full s3://bucket/key lines and where each resolved value came from",
+    )
     return parser.parse_args(argv)
+
+
+def _print_value_source(stdout: IO[str], verbose: bool, label: str, *, cli_override: bool) -> None:
+    """Only under `--verbose`: state whether `label` came from a CLI override
+    or from the stack's own output — routine (non-verbose) runs stay quiet
+    about it, per the same output-hygiene rule as `_print_key_summary`."""
+    if not verbose:
+        return
+    source = "CLI override" if cli_override else "stack output"
+    print(f"{label} resolved from: {source}", file=stdout)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -314,6 +342,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             knowledge_base_id="",
             data_source_id="",
             dry_run=True,
+            verbose=args.verbose,
+            stdout=sys.stdout,
+            stderr=sys.stderr,
         )
 
     need_bucket = args.bucket_name is None
@@ -327,11 +358,15 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     bucket_name = args.bucket_name or outputs["ContentBucketName"]
     knowledge_base_id = args.knowledge_base_id or outputs["KnowledgeBaseId"]
+    _print_value_source(sys.stdout, args.verbose, "bucket_name", cli_override=args.bucket_name is not None)
+    _print_value_source(sys.stdout, args.verbose, "knowledge_base_id", cli_override=args.knowledge_base_id is not None)
 
     bedrock_agent_client = boto3.client("bedrock-agent", region_name=args.region)
+    need_data_source_id = args.data_source_id is None
     data_source_id = args.data_source_id or resolve_data_source_id(
         bedrock_agent_client, knowledge_base_id, args.data_source_name
     )
+    _print_value_source(sys.stdout, args.verbose, "data_source_id", cli_override=not need_data_source_id)
 
     s3_client = boto3.client("s3", region_name=args.region)
     return run_sync(
@@ -341,8 +376,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         bucket_name=bucket_name,
         knowledge_base_id=knowledge_base_id,
         data_source_id=data_source_id,
+        verbose=args.verbose,
         poll_interval_seconds=args.poll_interval,
         timeout_seconds=args.timeout,
+        stdout=sys.stdout,
+        stderr=sys.stderr,
     )
 
 
