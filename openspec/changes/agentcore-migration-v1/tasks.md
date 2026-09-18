@@ -407,7 +407,7 @@ Split into PR8a (AgentStack: 8.1, 8.2, the AgentStack half of 8.4) and PR8b
       `cloudwatch:PutMetricData`, were deliberately NOT granted (trimmed further
       than AWS's generic template — see `agent_stack.py`'s module docstring for the
       "to verify at deploy" risk this leaves open).
-- [ ] 8.3 `infra/stacks/api_stack.py` — Lambda (Python 3.12, 512 MB) with least-privilege
+- [x] 8.3 `infra/stacks/api_stack.py` — Lambda (Python 3.12, 512 MB) with least-privilege
       role (`bedrock-agentcore:InvokeAgentRuntime` on one runtime ARN, `dynamodb:GetItem|
       Query|PutItem|UpdateItem` on one table ARN, no wildcard), HTTP API `POST /v1/chat`,
       custom domain `api.sergiomondragon.com` + ACM cert requested in `us-east-1` (DNS
@@ -418,15 +418,37 @@ Split into PR8a (AgentStack: 8.1, 8.2, the AgentStack half of 8.4) and PR8b
       GREEN: implement. Acceptance: `infrastructure` — *Least-Privilege Lambda Role*,
       *Custom Domain*; design §9.2 Lambda role JSON, §11 DNS runbook.
       Est: ~180 lines. **PR8b.**
+      **PR8b note**: a new `scripts/build_lambda.sh` (mirroring `build_agent.sh`'s
+      pattern, no root shim needed since the handler is the dotted path
+      `api.handler.lambda_handler`) produces `build/lambda.zip`, vendoring this
+      project's pinned `boto3==1.43.90` as arm64 wheels — 16.5 MB built, well under
+      the 250 MB limit. **CORS decision** (verified against
+      https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-cors.html):
+      "If you configure CORS for an API, API Gateway ignores CORS headers returned
+      from your backend integration" for every response, not only preflight — so
+      CORS is configured on the `HttpApi` itself (one source of truth), and
+      `src/api/http/responder.py`'s own CORS headers become dead weight on the wire
+      (harmless, not removed — out of this CDK-only PR's scope). **Route
+      405-vs-404 deviation**: HTTP API v2 has no native "wrong method on an
+      existing path" distinction — an unmatched route always returns a generic
+      `404`, not the `chat-endpoint` spec's literal `405`; producing a real `405`
+      would need an `ANY /v1/chat` catch-all route plus new Lambda dispatch logic,
+      outside this PR's wiring-only boundary (see `api_stack.py`'s module
+      docstring for the full analysis). Throttle: stage-level burst 20 / rate 10
+      rps, a coarse global cap under the cost ceiling, independent of the
+      DynamoDB per-session/per-IP limits. Reserved concurrency 5 as a hard cost
+      cap. Logs: explicit `LogGroup` (30-day retention, `RemovalPolicy.DESTROY`)
+      + scoped `logs:CreateLogStream`/`PutLogEvents`, never
+      `AWSLambdaBasicExecutionRole`'s `Resource: "*"`.
 - [x] 8.4a (PR8a) Wire `infra/app.py` to instantiate `DataStack` -> `AgentStack` with
       an explicit stack dependency (`add_stack_dependency` — `Stack.add_dependency`
       is deprecated in this CDK version); extend `test_app_synth.py` to assert synth
       produces both stacks and the dependency edge. `ApiStack` wiring is 8.4b (PR8b).
       Acceptance: `infrastructure` — *Infrastructure as Code*, scenario *Full stack
       recreation* (partial — full three-stack synth completes in PR8b). Est: ~35 lines.
-- [ ] 8.4b (PR8b) Extend `infra/app.py`/`test_app_synth.py` to add `ApiStack` and
+- [x] 8.4b (PR8b) Extend `infra/app.py`/`test_app_synth.py` to add `ApiStack` and
       assert `cdk synth --all` succeeds end to end across all three stacks.
-- [ ] 8.5 Document the one-time manual DNS step (ACM CNAME validation, then the
+- [x] 8.5 Document the one-time manual DNS step (ACM CNAME validation, then the
       `api.sergiomondragon.com` CNAME at DigitalOcean) inline as a code comment on the
       certificate construct, pointing to the Phase 9 runbook. **PR8b** (the ACM
       certificate construct lives in `api_stack.py`).

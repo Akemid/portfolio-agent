@@ -1024,7 +1024,8 @@ phases:
           agent execution role), and task 8.4a (wiring AgentStack into
           infra/app.py after DataStack). ApiStack (task 8.3), the remaining
           ApiStack half of 8.4, and 8.5's DNS comment are PR8b, not this batch.
-        status: implemented_pending_review
+        status: pr_open
+        pr_url: https://github.com/Akemid/portfolio-agent/pull/13
         commits:
           - 196c259 feat(infra): add CDK AgentStack with AgentCore Runtime and agent role
           - 3fb5659 feat(scripts): add build_agent.sh for the AgentCore direct-deploy zip
@@ -1193,6 +1194,144 @@ phases:
           diff --stat feat/cdk-data-stack..feat/cdk-agent-stack -- .
           ':(exclude)uv.lock'` now: 12 files changed, 929 insertions(+), 24
           deletions(-).
+      - pr: PR8b
+        branch: feat/cdk-api-stack
+        base: feat/cdk-agent-stack
+        scope: >-
+          PR8b slice of Phase 8 — the ApiStack half: task 8.3
+          (infra/stacks/api_stack.py: Lambda function, execution role, HTTP
+          API with POST /v1/chat, CORS, throttled $default stage, custom
+          domain + ACM certificate, outputs), task 8.4b (wiring ApiStack into
+          infra/app.py after DataStack/AgentStack), task 8.5 (the manual DNS
+          step documented inline on the certificate construct), plus a new
+          scripts/build_lambda.sh (packaging prep for 8.3, mirroring
+          build_agent.sh's pattern).
+        status: implemented_pending_review
+        commits:
+          - 22ea5ae feat(scripts): add build_lambda.sh for the Lambda deployment package
+          - 898cc55 feat(infra): add CDK ApiStack with Lambda gate, HTTP API, and custom domain
+          - d4bf088 feat(infra): wire ApiStack into the CDK app (task 8.4b)
+        tasks_completed: ["8.3", "8.4b", "8.5"]
+        diff_stat: >-
+          git diff --stat feat/cdk-agent-stack..feat/cdk-api-stack -- .
+          ':(exclude)uv.lock': 6 files changed, 826 insertions(+), 17
+          deletions(-); code-only (infra/, scripts/): 3 files changed, 430
+          insertions(+), 7 deletions(-) — slightly over the ~210-line
+          (~180+~20+~35 est.) forecast and the 400-line code-only budget by
+          about 30 lines (mostly api_stack.py's module docstring documenting
+          the CORS decision and the 405-vs-404 deviation with cited doc
+          URLs, per this session's own verify-before-coding requirement).
+          This PR boundary (the full ApiStack half of Phase 8) was fixed by
+          the orchestrator's task instructions rather than re-split at apply
+          time; not treated as a stop-the-line overage.
+        local_gate: >-
+          ruff check/format clean, mypy src infra clean, 344 tests pass (up
+          from 329 at PR8a-review-fixes time — 3 new in
+          test_build_lambda_layout.py, 11 new in test_api_stack.py, 1 new in
+          test_app_synth.py).
+        cors_decision: >-
+          Verified against
+          https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-cors.html:
+          "If you configure CORS for an API, API Gateway ignores CORS
+          headers returned from your backend integration" — applies to every
+          response, not only the OPTIONS preflight. Decision: configure CORS
+          on the HttpApi itself (allow_origins = the same list Settings.from_env
+          reads, allow_credentials=true, allow_methods=[POST],
+          allow_headers=[content-type], max_age=300s) as the ONE source of
+          truth for what a browser sees. src/api/http/responder.py's own
+          cors_headers() (written in an earlier phase, before this interplay
+          was verified) becomes dead weight on the wire once deployed —
+          harmless, not removed here (out of this CDK-only PR's scope; a
+          Lambda-code cleanup for a later batch if desired). Set-Cookie and
+          every other non-CORS header the Lambda returns are unaffected.
+          Phase 9's smoke test MUST confirm a real browser response carries
+          exactly one Access-Control-Allow-Origin header, not two.
+        route_405_vs_404_deviation: >-
+          The chat-endpoint spec's "Wrong method" scenario says GET /v1/chat
+          -> 405 Method Not Allowed. Verified that API Gateway HTTP API v2
+          has no native method-exists-but-wrong-verb distinction: an
+          unmatched route (any method/path) always returns a generic 404
+          Not Found. Producing a literal 405 would need an ANY /v1/chat
+          catch-all route plus new method-dispatch logic inside
+          lambda_handler — outside task 8.3's RED test list and this PR's
+          wiring-only boundary. This stack defines exactly the one POST
+          /v1/chat route and relies on the native 404 for every other
+          method/path. Recorded as a genuine spec/implementation gap (not
+          silently patched); a future batch could add the ANY route + 405
+          dispatch in the Lambda if the owner wants the literal spec text
+          honored.
+        iam_statements:
+          - "InvokeAgentRuntime: bedrock-agentcore:InvokeAgentRuntime on <runtime ARN> and <runtime ARN>/* (PR5's documented sub-resource requirement)"
+          - "ReadWriteSessionsTable: dynamodb:GetItem/PutItem/UpdateItem/Query on exactly the one table ARN (Query per PR3b's rate-limiter requirement)"
+          - "WriteOwnLogGroup: logs:CreateLogStream/PutLogEvents on <this function's log group ARN>:* (no AWSLambdaBasicExecutionRole managed policy — its Resource:\"*\" would violate least privilege)"
+        throttle_and_concurrency:
+          reserved_concurrent_executions: 5
+          stage_throttle_burst_limit: 20
+          stage_throttle_rate_limit: 10
+          rationale: >-
+            Coarse, stage-wide caps under the design's USD 10 cost ceiling,
+            independent of and in addition to the DynamoDB-backed per-session
+            (10/day) and per-IP (5/min) limits — a backstop against both a
+            traffic spike and a bypass of those application-level checks.
+        lambda_zip_size: >-
+          16,555,061 bytes (~15.8 MiB) built via scripts/build_lambda.sh
+          (boto3==1.43.90 + botocore + transitive deps as arm64 wheels, plus
+          src/api/), well under the 250 MB deployment package limit.
+        manual_dns_and_acm_steps_for_runbook: >-
+          One-time, before first deploy (documented inline as a comment on
+          the ApiCertificate construct in api_stack.py, and here for Phase
+          9's runbook): (1) after `cdk deploy`, run `aws acm
+          describe-certificate --certificate-arn <CertificateValidationHint
+          output> --region us-east-1 --query DomainValidationOptions` to get
+          the DNS validation CNAME (name -> value); (2) create that CNAME at
+          DigitalOcean's DNS panel for sergiomondragon.com; (3) wait for the
+          certificate to reach ISSUED (ACM polls DNS automatically once the
+          record exists — the stack will not finish creating until then);
+          (4) create a second CNAME, `api` -> the ApiRegionalDomainName
+          output value, also at DigitalOcean, so api.sergiomondragon.com
+          resolves to the HTTP API's regional endpoint.
+        synth_and_cfn_lint_result: >-
+          Real build_agent.sh (29.3 MB) + build_lambda.sh (16.5 MB) zips
+          built; synth with neutralized credentials (AWS_CONFIG_FILE=/dev/null
+          AWS_SHARED_CREDENTIALS_FILE=/dev/null AWS_ACCESS_KEY_ID=x
+          AWS_SECRET_ACCESS_KEY=x CDK_DEFAULT_ACCOUNT=000000000000
+          CDK_DEFAULT_REGION=us-east-1, per gotchas/cdk-asset-account-leak —
+          dummy non-empty keys, not blank, since blank values did not
+          reliably force the fallback in that prior discovery) succeeded for
+          all three stacks; grepped the synthesized portfolio-agent-api
+          template for any 12-digit account id — only the fake
+          000000000000 appears. validate_cloudformation_template (cfn-lint)
+          on portfolio-agent-api.template.json: 0 errors, 2 warnings (both
+          W3005, CDK-auto-generated redundant DependsOn already implied by a
+          Ref/GetAtt — on the Lambda's own role/policy dependency and the
+          default stage's domain-name dependency — not something this
+          batch's code explicitly added, same class of benign finding PR7
+          already saw once). cdk.out/ and build/ deleted after inspection.
+        to_verify_at_deploy:
+          - "Confirm the DNS validation CNAME + api CNAME manual steps above are completed before relying on api.sergiomondragon.com."
+          - "Post-deploy smoke test (Phase 9) must confirm exactly one Access-Control-Allow-Origin header on a real browser response (the CORS decision above), and that the native 404-for-GET-/v1/chat behavior (route_405_vs_404_deviation) is acceptable to the owner as-is."
+          - "Confirm the throttle numbers (burst 20/rate 10) and reserved concurrency (5) do not throttle legitimate traffic at expected volume (~1,000 questions/month per design.md)."
+        note: >-
+          Strict TDD followed throughout (RED confirmed by
+          ModuleNotFoundError/script-not-found before each GREEN
+          implementation; full-suite safety net run implicitly via the
+          existing 332/343/344-passing gate at each commit). Three work-unit
+          commits: (1) build_lambda.sh + its layout test (no production-code
+          RED cycle possible for a shell script — mirrors 8.1's own
+          "No RED (shell packaging step)" note — RED was "script not found",
+          GREEN was writing it); (2) infra/stacks/api_stack.py + the full
+          test_api_stack.py suite in one RED-then-GREEN cycle (same
+          established pattern as PR7/PR8a: one comprehensive test file
+          written first, confirmed failing via ModuleNotFoundError, then one
+          GREEN implementation); (3) wiring ApiStack into infra/app.py +
+          extending test_app_synth.py for all three stacks. One test
+          assertion in test_api_stack.py was corrected during GREEN, not the
+          production code: `IntegrationMethod` is an HTTP_PROXY-only
+          CloudFormation property (the HTTP method used to call a proxied
+          URL) and does not apply to AWS_PROXY (Lambda) integrations, which
+          always invoke Lambda's own Invoke API regardless of the client's
+          method — the assertion was dropped rather than adding an
+          unsupported property to satisfy it.
   verify:
     status: pending
     depends_on: [apply]
