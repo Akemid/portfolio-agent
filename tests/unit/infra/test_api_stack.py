@@ -11,6 +11,7 @@ APIs, `AWS::ApiGatewayV2::Stage` throttle properties, and
 
 from __future__ import annotations
 
+import json
 import zipfile
 from pathlib import Path
 from typing import Any
@@ -231,6 +232,48 @@ def test_default_stage_has_throttle_settings(fake_agent_zip: str, fake_lambda_zi
             "DefaultRouteSettings": {"ThrottlingBurstLimit": 20, "ThrottlingRateLimit": 10},
         },
     )
+
+
+_EXPECTED_ACCESS_LOG_FIELDS = {
+    "requestId",
+    "ip",
+    "requestTime",
+    "httpMethod",
+    "routeKey",
+    "status",
+    "protocol",
+    "responseLength",
+    "integrationErrorMessage",
+}
+
+
+def test_default_stage_has_access_logging_with_a_safe_field_set(fake_agent_zip: str, fake_lambda_zip: str) -> None:
+    """Observability finding: the `$default` stage MUST have access logging, but the
+    format string is an explicit allowlist of $context fields — no cookies, no
+    headers, no request/response body, and no `$context.authorizer` (there is no
+    authorizer here, but the format must never accidentally grow one in later
+    contexts)."""
+    template = _synth_template(fake_agent_zip, fake_lambda_zip)
+    template_json = template.to_json()
+
+    (stage_resource,) = [
+        resource for resource in template_json["Resources"].values() if resource["Type"] == "AWS::ApiGatewayV2::Stage"
+    ]
+    access_log_settings = stage_resource["Properties"]["AccessLogSettings"]
+    assert access_log_settings["DestinationArn"]
+
+    fields = json.loads(access_log_settings["Format"])
+    assert set(fields) == _EXPECTED_ACCESS_LOG_FIELDS
+
+    raw_format = access_log_settings["Format"]
+    assert "$context.authorizer" not in raw_format
+    assert "cookie" not in raw_format.lower()
+    assert "body" not in raw_format.lower()
+
+    # A dedicated log group for access logs, distinct from the function's own
+    # log group, both with the same 30-day retention.
+    template.has_resource_properties("AWS::Logs::LogGroup", {"RetentionInDays": 30})
+    template.resource_count_is("AWS::Logs::LogGroup", 2)
 
 
 def test_custom_domain_configured_with_acm(fake_agent_zip: str, fake_lambda_zip: str) -> None:

@@ -65,6 +65,28 @@ Verified against AWS documentation before writing (URLs cited per resource):
   violate the `infrastructure` spec's *Least-Privilege Lambda Role*
   requirement) — same pattern as `agent_stack.py`'s `RuntimeLogGroup`/
   `RuntimeLogStream` statements.
+- **Access logging** (observability finding): the `$default` stage has
+  `AccessLogSettings` pointed at a dedicated `logs.LogGroup` (30-day
+  retention, `RemovalPolicy.DESTROY` — same ephemeral-data reasoning as the
+  function's own log group), with a JSON format built from an explicit
+  allowlist of nine `$context` fields, verified against the JSON example in
+  AWS's own docs:
+  https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-logging.html
+  (`requestId`, `ip`, `requestTime`, `httpMethod`, `routeKey`, `status`,
+  `protocol`, `responseLength`, `integrationErrorMessage`). No cookies, no
+  headers, no request/response body, and no `$context.authorizer.*` — this
+  route has no authorizer, and the allowlist is written so one being added
+  later can never silently widen what lands in these logs. **The source IP
+  does appear in these access logs** (`$context.identity.sourceIp`, mapped
+  to the `ip` field) — that is by design: it is AWS-managed infrastructure
+  data with a short (30-day), non-configurable-by-us retention, distinct
+  from `src/api`'s own application logs, which only ever log the *hashed*
+  IP (`derive_key("ip", source_ip)` — design.md SS4.1) and never the raw
+  address. `apigwv2.HttpStage`'s `access_log_settings` parameter is typed as
+  the `IAccessLogSettings` protocol, not a plain dict, so `_AccessLogSettings`
+  below is a small `@jsii.implements` adapter rather than an L1 escape hatch
+  to `CfnStage` — verified locally against the installed aws-cdk-lib version
+  that the L2 `HttpStage` already exposes this parameter directly.
 
 **Route-405-vs-404 deviation from the `chat-endpoint` spec's literal scenario
 text**: the spec's *Wrong method* scenario says `GET /v1/chat` -> `405
@@ -87,11 +109,14 @@ un-budgeted Lambda code changes.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
+import jsii
 from aws_cdk import CfnOutput, Duration, RemovalPolicy, Stack
+from aws_cdk import aws_apigateway as apigw
 from aws_cdk import aws_apigatewayv2 as apigwv2
 from aws_cdk import aws_apigatewayv2_integrations as apigwv2_integrations
 from aws_cdk import aws_certificatemanager as acm
@@ -128,6 +153,47 @@ CORS_MAX_AGE = Duration.seconds(300)
 THROTTLE_BURST_LIMIT = 20
 THROTTLE_RATE_LIMIT = 10
 
+# Explicit allowlist (design.md SS9.2's observability finding): exactly these
+# nine `$context` fields, matching AWS's own documented JSON example for HTTP
+# API access logs — no cookies, no headers, no request/response body. See the
+# module docstring's "Access logging" bullet for the cited AWS doc and the
+# "source IP is logged by design" rationale.
+ACCESS_LOG_FIELDS = {
+    "requestId": "$context.requestId",
+    "ip": "$context.identity.sourceIp",
+    "requestTime": "$context.requestTime",
+    "httpMethod": "$context.httpMethod",
+    "routeKey": "$context.routeKey",
+    "status": "$context.status",
+    "protocol": "$context.protocol",
+    "responseLength": "$context.responseLength",
+    "integrationErrorMessage": "$context.integrationErrorMessage",
+}
+
+
+@jsii.implements(apigwv2.IAccessLogSettings)
+class _AccessLogSettings:
+    """Minimal `IAccessLogSettings` implementation.
+
+    `apigwv2.HttpStage`'s `access_log_settings` parameter is typed as this
+    jsii *interface* (a `Protocol`, not an exported struct/dataclass), so a
+    plain Python dict fails jsii deserialization at synth time — this small
+    adapter is the supported way to satisfy it without dropping to the L1
+    `CfnStage` escape hatch.
+    """
+
+    def __init__(self, destination: apigwv2.IAccessLogDestination, log_format: apigw.AccessLogFormat) -> None:
+        self._destination = destination
+        self._format = log_format
+
+    @property
+    def destination(self) -> apigwv2.IAccessLogDestination:
+        return self._destination
+
+    @property
+    def format(self) -> apigw.AccessLogFormat:
+        return self._format
+
 
 class ApiStack(Stack):
     """Lambda gate, HTTP API, CORS, throttling, and the custom domain."""
@@ -150,6 +216,7 @@ class ApiStack(Stack):
         self._allowed_origins = list(allowed_origins)
 
         self.log_group = self._build_log_group()
+        self.access_log_group = self._build_access_log_group()
         self.lambda_role = self._build_lambda_role()
         self.function = self._build_function(lambda_zip_path)
         self.certificate = self._build_certificate(domain_name)
@@ -169,6 +236,19 @@ class ApiStack(Stack):
             self,
             "ChatFunctionLogGroup",
             log_group_name=f"/aws/lambda/{FUNCTION_NAME}",
+            retention=LOG_RETENTION,
+            removal_policy=RemovalPolicy.DESTROY,
+        )
+
+    def _build_access_log_group(self) -> logs.LogGroup:
+        # Separate from `ChatFunctionLogGroup`: this one holds API Gateway's
+        # own access logs (see the module docstring's "Access logging"
+        # bullet), not the Lambda's application logs. Same ephemeral-data
+        # reasoning as `_build_log_group` — DESTROY, not RETAIN.
+        return logs.LogGroup(
+            self,
+            "ChatApiAccessLogGroup",
+            log_group_name=f"/aws/apigateway/{FUNCTION_NAME}-access",
             retention=LOG_RETENTION,
             removal_policy=RemovalPolicy.DESTROY,
         )
@@ -282,11 +362,16 @@ class ApiStack(Stack):
         self.http_api.add_routes(path=ROUTE_PATH, methods=[apigwv2.HttpMethod.POST], integration=integration)
 
     def _build_default_stage(self) -> apigwv2.HttpStage:
+        access_log_settings = _AccessLogSettings(
+            destination=apigwv2.LogGroupLogDestination(self.access_log_group),
+            log_format=apigw.AccessLogFormat.custom(json.dumps(ACCESS_LOG_FIELDS)),
+        )
         return apigwv2.HttpStage(
             self,
             "DefaultStage",
             http_api=self.http_api,
             auto_deploy=True,
+            access_log_settings=access_log_settings,
             throttle=apigwv2.ThrottleSettings(burst_limit=THROTTLE_BURST_LIMIT, rate_limit=THROTTLE_RATE_LIMIT),
             domain_mapping=apigwv2.DomainMappingOptions(domain_name=self.domain_name_resource),
         )
