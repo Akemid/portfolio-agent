@@ -1473,6 +1473,47 @@ phases:
           (8) Point the portfolio frontend widget at
           `https://api.sergiomondragon.com/v1/chat` with `credentials:
           'include'` (Phase 10, external repo).
+        review_fixes: >-
+          Test-first fixes for a fresh-context code review of PR9a, six
+          commits on `feat/ops-scripts` (all RED-first, gate green after
+          each): (1) `discover_content_files` now rejects symlinks (naming
+          only the relative path, never the resolved target) and skips
+          hidden files/directories — security MEDIUM+LOW. (2) `upload_files`
+          sets `ContentType` from the extension (`application/pdf` /
+          `text/markdown`); added `--dry-run` (discovers and prints planned
+          keys, no upload/ingestion, no AWS call at all) — code MINOR x2.
+          (3) Default output no longer prints the bucket name (object count
+          + `content/` prefix only); `--verbose` shows full `s3://bucket/key`
+          lines and each resolved value's source (CLI override vs. stack
+          output) — security LOW. (4) `tests/smoke/test_smoke.py` gained
+          `validate_target_host` (HTTPS + an allowlisted host, default
+          `api.sergiomondragon.com`, override `--allow-host`) and a
+          same-host-only `_SameHostRedirectHandler` on `UrllibTransport`,
+          plus a stderr warning before `--exhaust-limits` — security
+          MEDIUM+LOW. (5) Raised smoke-test defaults to 20 sessions (cold
+          N=20, warm N=40 — the floor where nearest-rank p95 stops being
+          just max()); `format_report` now labels a population's stat as
+          "max (N=<n>, too few samples for a p95)" instead of "p95" below
+          that floor — code MAJOR (measurement honesty). Restored the
+          dropped Set-Cookie flag check task 9.3 required: the raw header
+          must carry `HttpOnly; Secure; SameSite=Lax; Path=/` before
+          `_parse_cookie_pair` strips them — code MINOR. (6) Extracted the
+          three stack names and the `portfolio-agent-content` data source
+          name into `src/shared/names.py` (imported by `infra/app.py`,
+          `infra/stacks/data_stack.py`, `scripts/sync_content.py`,
+          `tests/smoke/test_smoke.py`) — code MINOR (duplicated literals).
+          Placed under `src/shared/` rather than `src/api/` or
+          `infra/names.py` because `scripts/build_lambda.sh` only copies
+          `src/api/` into the Lambda zip and the module imports nothing
+          itself, so it cannot trip
+          `tests/unit/test_lambda_package_isolation.py` or ship CDK into the
+          Lambda package. `git diff --stat
+          feat/cdk-api-stack..feat/ops-scripts -- . ':(exclude)uv.lock'`
+          after all six commits: 13 files changed, 2188 insertions(+), 28
+          deletions(-). Full gate green: ruff check/format clean, mypy
+          src infra clean (43 files), 407 tests pass (up from 381 at PR9a
+          apply time), `--help` still works for both scripts, `pytest
+          tests/smoke -q` still collects nothing.
   verify:
     status: pending
     depends_on: [apply]
