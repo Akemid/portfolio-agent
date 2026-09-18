@@ -373,6 +373,12 @@ class ApiStack(Stack):
         )
 
     def _build_route(self) -> None:
+        # `add_routes` is called with no `authorizer`, i.e. `AuthorizationType:
+        # NONE` — deliberate, not an oversight. `chat-endpoint` spec: this is
+        # "the public, no-login HTTP contract" by design; the Lambda itself is
+        # the security gate, via the session cookie (`session-identity` spec)
+        # and the per-session/per-IP rate limits (`rate-limiting` spec,
+        # `DynamoRateLimiter`), not an API Gateway authorizer.
         integration = apigwv2_integrations.HttpLambdaIntegration("ChatIntegration", self.function)
         self.http_api.add_routes(path=ROUTE_PATH, methods=[apigwv2.HttpMethod.POST], integration=integration)
 
