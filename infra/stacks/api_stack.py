@@ -50,6 +50,10 @@ Verified against AWS documentation before writing (URLs cited per resource):
   `api` record at DigitalOcean:
   https://docs.aws.amazon.com/cdk/api/v2/java/software/amazon/awscdk/services/apigatewayv2/package-summary.html
   https://docs.aws.amazon.com/cdk/api/v1/python/aws_cdk.aws_certificatemanager/CertificateValidation.html
+  **TLS finding**: the `DomainName` pins `security_policy=SecurityPolicy.TLS_1_2`
+  — API Gateway custom domains otherwise default to the outdated `TLS_1_0`
+  policy (AWS's own "Choosing a minimum TLS version for a custom domain"
+  guidance), which this stack never wants to serve.
 - Lambda execution role: `bedrock-agentcore:InvokeAgentRuntime` on the
   runtime ARN AND `<runtime ARN>/*` (PR5's apply-progress note: the trailing
   wildcard covers runtime-endpoint/qualifier sub-resources a bare runtime ARN
@@ -341,7 +345,18 @@ class ApiStack(Stack):
         )
 
     def _build_domain_name(self, domain_name: str, certificate: acm.Certificate) -> apigwv2.DomainName:
-        return apigwv2.DomainName(self, "ApiDomainName", domain_name=domain_name, certificate=certificate)
+        # TLS finding: without this, a custom domain defaults to the TLS_1_0
+        # security policy (outdated ciphers) — verified against AWS's own
+        # "Choosing a minimum TLS version for a custom domain" guidance.
+        # Pin explicitly to TLS_1_2, the higher of the two values this CDK
+        # version's `SecurityPolicy` enum exposes.
+        return apigwv2.DomainName(
+            self,
+            "ApiDomainName",
+            domain_name=domain_name,
+            certificate=certificate,
+            security_policy=apigwv2.SecurityPolicy.TLS_1_2,
+        )
 
     def _build_http_api(self) -> apigwv2.HttpApi:
         return apigwv2.HttpApi(

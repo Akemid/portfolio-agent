@@ -287,6 +287,18 @@ def test_custom_domain_configured_with_acm(fake_agent_zip: str, fake_lambda_zip:
     template.resource_count_is("AWS::ApiGatewayV2::ApiMapping", 1)
 
 
+def test_custom_domain_pins_tls_1_2(fake_agent_zip: str, fake_lambda_zip: str) -> None:
+    template = _synth_template(fake_agent_zip, fake_lambda_zip)
+
+    template.has_resource_properties(
+        "AWS::ApiGatewayV2::DomainName",
+        {
+            "DomainName": DOMAIN_NAME,
+            "DomainNameConfigurations": [{"SecurityPolicy": "TLS_1_2"}],
+        },
+    )
+
+
 def test_outputs_expose_api_url_domain_and_certificate_hint(fake_agent_zip: str, fake_lambda_zip: str) -> None:
     template = _synth_template(fake_agent_zip, fake_lambda_zip)
 
