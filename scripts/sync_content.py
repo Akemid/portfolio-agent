@@ -82,11 +82,33 @@ class IngestionResult:
 def discover_content_files(content_dir: Path, allowed_extensions: frozenset[str] = ALLOWED_EXTENSIONS) -> list[Path]:
     """Return every file under `content_dir`, refusing to proceed if the
     directory is missing, empty, or contains a disallowed extension — a
-    partial or bad upload must never reach S3."""
+    partial or bad upload must never reach S3.
+
+    Hidden files/directories (any path component starting with `.`, e.g.
+    `.git/`, `.secret.md`) are silently skipped. Symlinks are refused
+    outright: a symlink can point anywhere on the operator's machine
+    (including outside `content_dir`), so this never follows one — the error
+    names only the offending path relative to `content_dir`, never the
+    resolved target, which could itself be private.
+    """
     if not content_dir.is_dir():
         raise ContentValidationError(f"content directory not found: {content_dir}")
 
-    files = sorted(path for path in content_dir.rglob("*") if path.is_file())
+    resolved_root = content_dir.resolve()
+    files: list[Path] = []
+    for path in content_dir.rglob("*"):
+        relative = path.relative_to(content_dir)
+        if any(part.startswith(".") for part in relative.parts):
+            continue
+        if path.is_symlink():
+            raise ContentValidationError(f"symlinks are not allowed in the content directory: {relative}")
+        if not path.is_file():
+            continue
+        if not path.resolve().is_relative_to(resolved_root):
+            raise ContentValidationError(f"file resolves outside the content directory: {relative}")
+        files.append(path)
+
+    files.sort()
     if not files:
         raise ContentValidationError(f"content directory is empty: {content_dir}")
 

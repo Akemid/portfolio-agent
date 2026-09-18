@@ -109,6 +109,48 @@ def test_discover_content_files_returns_sorted_pdf_and_md_files(tmp_path: Path) 
     assert files == sorted([pdf, md])
 
 
+def test_discover_content_files_rejects_symlink_without_leaking_target_path(tmp_path: Path) -> None:
+    """A symlink could point anywhere on the operator's machine — refuse it
+    outright rather than silently uploading whatever it resolves to, and
+    never print the resolved (possibly private) target in the error."""
+    outside_secret = tmp_path / "outside_secret.pdf"
+    outside_secret.write_bytes(b"%PDF-1.4")
+    content_dir = tmp_path / "content"
+    content_dir.mkdir()
+    (content_dir / "resume.pdf").symlink_to(outside_secret)
+
+    with pytest.raises(ContentValidationError) as exc_info:
+        discover_content_files(content_dir)
+
+    message = str(exc_info.value)
+    assert "resume.pdf" in message
+    assert str(outside_secret) not in message
+
+
+def test_discover_content_files_skips_hidden_files(tmp_path: Path) -> None:
+    (tmp_path / ".secret.md").write_text("hidden")
+    (tmp_path / "cv").mkdir()
+    valid = tmp_path / "cv" / "cv.pdf"
+    valid.write_bytes(b"%PDF-1.4")
+
+    files = discover_content_files(tmp_path)
+
+    assert files == [valid]
+
+
+def test_discover_content_files_skips_hidden_directories(tmp_path: Path) -> None:
+    hidden_dir = tmp_path / ".git"
+    hidden_dir.mkdir()
+    (hidden_dir / "config.pdf").write_bytes(b"%PDF-1.4")
+    (tmp_path / "cv").mkdir()
+    valid = tmp_path / "cv" / "cv.pdf"
+    valid.write_bytes(b"%PDF-1.4")
+
+    files = discover_content_files(tmp_path)
+
+    assert files == [valid]
+
+
 # --- resolve_stack_outputs ---------------------------------------------------
 
 
