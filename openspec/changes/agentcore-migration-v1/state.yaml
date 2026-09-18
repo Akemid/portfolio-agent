@@ -1256,13 +1256,13 @@ phases:
           lambda_handler — outside task 8.3's RED test list and this PR's
           wiring-only boundary. This stack defines exactly the one POST
           /v1/chat route and relies on the native 404 for every other
-          method/path. Recorded as a genuine spec/implementation gap (not
-          silently patched); a future batch could add the ANY route + 405
-          dispatch in the Lambda if the owner wants the literal spec text
-          honored.
+          method/path. Originally recorded as a genuine spec/implementation
+          gap; the review_fixes batch below corrected the chat-endpoint
+          spec's "Wrong method" scenario to the actual 404 instead of adding
+          un-budgeted Lambda dispatch logic, so this is no longer a gap.
         iam_statements:
           - "InvokeAgentRuntime: bedrock-agentcore:InvokeAgentRuntime on <runtime ARN> and <runtime ARN>/* (PR5's documented sub-resource requirement)"
-          - "ReadWriteSessionsTable: dynamodb:GetItem/PutItem/UpdateItem/Query on exactly the one table ARN (Query per PR3b's rate-limiter requirement)"
+          - "ReadWriteSessionsTable: dynamodb:GetItem/PutItem/UpdateItem on exactly the one table ARN (no Query as of the review_fixes batch below — the IP rate limiter reads via a point GetItem, not a Query)"
           - "WriteOwnLogGroup: logs:CreateLogStream/PutLogEvents on <this function's log group ARN>:* (no AWSLambdaBasicExecutionRole managed policy — its Resource:\"*\" would violate least privilege)"
         throttle_and_concurrency:
           reserved_concurrent_executions: 5
@@ -1332,6 +1332,57 @@ phases:
           always invoke Lambda's own Invoke API regardless of the client's
           method — the assertion was dropped rather than adding an
           unsupported property to satisfy it.
+        review_fixes: >-
+          Post-review batch (test-first, one commit per finding, on
+          feat/cdk-api-stack): (1) MEDIUM/MAJOR least-privilege — dropped the
+          stale dynamodb:Query grant from ChatFunctionRole (PR3b's IP rate
+          limiter reads the previous-minute bucket via a point GetItem, not a
+          Query — src/api/adapters/dynamo_rate_limiter.py::_check_ip); the
+          test was updated first (confirmed RED), then api_stack.py's role
+          and docstring, design.md SS9.2's Lambda-role JSON sketch, and
+          tasks.md task 8.3's wording were all corrected together in one
+          commit so the least-privilege contract stays coherent across code
+          and docs. (2) MEDIUM observability — added AccessLogSettings on the
+          $default stage: a new ChatApiAccessLogGroup (30-day retention,
+          RemovalPolicy.DESTROY), format restricted to exactly nine $context
+          fields (requestId, ip, requestTime, httpMethod, routeKey, status,
+          protocol, responseLength, integrationErrorMessage) — no cookies,
+          headers, or body; source IP is logged here by design (AWS-managed,
+          short retention) while application logs keep it hashed.
+          apigwv2.HttpStage.access_log_settings is typed as the
+          IAccessLogSettings jsii Protocol, not a plain dict or exported
+          struct, so a small `@jsii.implements(apigwv2.IAccessLogSettings)`
+          adapter class (_AccessLogSettings) satisfies it — verified locally
+          that the installed aws-cdk-lib version's L2 HttpStage already
+          exposes the parameter directly, so no L1 CfnStage escape hatch was
+          needed. (3) LOW TLS — pinned ApiDomainName to
+          SecurityPolicy.TLS_1_2 (verified against AWS's own guidance that a
+          custom domain otherwise defaults to the outdated TLS_1_0 policy).
+          (4) LOW clarity — added a comment on _build_route explaining that
+          AuthorizationType NONE is deliberate: the chat-endpoint spec calls
+          this a public, no-login endpoint, and the Lambda (session cookie +
+          rate limits) is the security gate, not an API Gateway authorizer.
+          (5) MINOR spec truth — corrected the chat-endpoint spec's "Wrong
+          method" scenario from the literal 405 to the actual 404 (HTTP API
+          v2 has no per-method 405 for an unmatched route), keeping the
+          requirement's "agent never invoked" intent unchanged. (6) NIT —
+          added a one-line comment above responder.py's cors_headers noting
+          that API Gateway ignores backend CORS headers once CORS is
+          configured on the HttpApi, so those headers only matter for
+          direct/local invocation; no behavior change. Full gate green after
+          every commit (ruff check/format, mypy src infra, pytest — 346
+          tests). Re-synthesized with neutralized credentials (fixture
+          agent.zip/lambda.zip, CDK_DEFAULT_ACCOUNT=000000000000); all three
+          stacks synthesized; the api template shows no dynamodb:Query, the
+          nine-field AccessLogSettings format, SecurityPolicy: TLS_1_2, and
+          AuthorizationType: NONE as expected.
+          validate_cloudformation_template (cfn-lint) on
+          portfolio-agent-api.template.json: 0 errors, 3 warnings (2x W3005
+          redundant DependsOn already implied by Ref/GetAtt — same benign
+          class as the original PR8b batch — plus 1x W2001 unused
+          BootstrapVersion parameter, a CDK-generated artifact, not
+          introduced by this batch). cdk.out/ and the fixture zips deleted
+          after inspection; git status clean.
   verify:
     status: pending
     depends_on: [apply]
