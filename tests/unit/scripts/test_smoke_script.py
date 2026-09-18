@@ -9,13 +9,19 @@ real only by a human, against a deployed stack (`chat-endpoint` spec,
 from __future__ import annotations
 
 import json
+import urllib.error
+import urllib.request
 from collections.abc import Mapping
 from typing import Any
 
+import pytest
 from smoke.test_smoke import (
     COLD_SLO_SECONDS,
+    DEFAULT_ALLOWED_HOST,
     WARM_SLO_SECONDS,
     HttpResponse,
+    TargetValidationError,
+    _SameHostRedirectHandler,
     check_response_shape,
     check_single_cors_header,
     compute_percentile,
@@ -24,6 +30,7 @@ from smoke.test_smoke import (
     run_session,
     run_smoke_test,
     send_chat_request,
+    validate_target_host,
 )
 
 
@@ -266,3 +273,49 @@ def test_format_report_includes_pass_fail_and_latency_numbers() -> None:
     assert "cold p50=" in text
     assert str(WARM_SLO_SECONDS) in text
     assert str(COLD_SLO_SECONDS) in text
+
+
+# --- validate_target_host -------------------------------------------------------
+
+
+def test_validate_target_host_accepts_https_expected_host() -> None:
+    host = validate_target_host(f"https://{DEFAULT_ALLOWED_HOST}", DEFAULT_ALLOWED_HOST)
+    assert host == DEFAULT_ALLOWED_HOST
+
+
+def test_validate_target_host_rejects_non_https_scheme() -> None:
+    with pytest.raises(TargetValidationError, match="https"):
+        validate_target_host(f"http://{DEFAULT_ALLOWED_HOST}", DEFAULT_ALLOWED_HOST)
+
+
+def test_validate_target_host_rejects_unexpected_host() -> None:
+    with pytest.raises(TargetValidationError, match="evil.example.com"):
+        validate_target_host("https://evil.example.com", DEFAULT_ALLOWED_HOST)
+
+
+def test_validate_target_host_allows_override_via_allowed_host_argument() -> None:
+    host = validate_target_host("https://staging.example.com", "staging.example.com")
+    assert host == "staging.example.com"
+
+
+# --- _SameHostRedirectHandler ----------------------------------------------------
+
+
+def test_same_host_redirect_handler_blocks_cross_host_redirect() -> None:
+    handler = _SameHostRedirectHandler()
+    req = urllib.request.Request(f"https://{DEFAULT_ALLOWED_HOST}/v1/chat")
+
+    with pytest.raises(urllib.error.HTTPError):
+        handler.redirect_request(req, None, 302, "Found", {}, "https://evil.example.com/steal")
+
+
+def test_same_host_redirect_handler_allows_same_host_redirect() -> None:
+    handler = _SameHostRedirectHandler()
+    req = urllib.request.Request(f"https://{DEFAULT_ALLOWED_HOST}/v1/chat")
+
+    new_request = handler.redirect_request(
+        req, None, 302, "Found", {}, f"https://{DEFAULT_ALLOWED_HOST}/v1/chat-redirected"
+    )
+
+    assert new_request is not None
+    assert new_request.full_url == f"https://{DEFAULT_ALLOWED_HOST}/v1/chat-redirected"

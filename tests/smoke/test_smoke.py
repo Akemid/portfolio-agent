@@ -32,6 +32,7 @@ import math
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -41,6 +42,9 @@ CHAT_PATH = "/v1/chat"
 DEFAULT_STACK_NAME = "portfolio-agent-api"
 DEFAULT_REGION = "us-east-1"
 DEFAULT_ORIGIN = "https://sergiomondragon.com"
+# `chat-endpoint` spec, *CORS Restriction*; the API's own custom domain (task 8.3) —
+# a resolved/overridden `--api-url` must never silently point anywhere else.
+DEFAULT_ALLOWED_HOST = "api.sergiomondragon.com"
 DEFAULT_SESSIONS = 3
 DEFAULT_QUESTIONS_PER_SESSION = 3
 DEFAULT_SESSION_DAILY_LIMIT = 10
@@ -75,16 +79,61 @@ class Transport(Protocol):
     def request(self, method: str, url: str, headers: Mapping[str, str], body: bytes | None) -> HttpResponse: ...
 
 
+class TargetValidationError(Exception):
+    """Raised when the resolved base URL fails the scheme/host safety check."""
+
+
+def validate_target_host(base_url: str, allowed_host: str) -> str:
+    """Refuse to send a single real request to anything but an explicitly
+    allowed HTTPS host. A resolved `ApiUrl` stack output or a typo'd
+    `--api-url` override must never silently send session cookies and
+    portfolio questions to an unexpected target."""
+    parsed = urllib.parse.urlsplit(base_url)
+    if parsed.scheme != "https":
+        raise TargetValidationError(f"refusing non-HTTPS target {base_url!r} (scheme must be https)")
+    if parsed.hostname != allowed_host:
+        raise TargetValidationError(
+            f"refusing target host {parsed.hostname!r}: expected {allowed_host!r} "
+            "(pass --allow-host if this is intentional)"
+        )
+    return parsed.hostname
+
+
+class _SameHostRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Refuses any redirect whose target host differs from the original
+    request's host — without this, a compromised or misconfigured API
+    could redirect this script's requests (and the session cookie in them)
+    to an attacker-controlled host."""
+
+    def redirect_request(
+        self,
+        req: urllib.request.Request,
+        fp: Any,
+        code: int,
+        msg: str,
+        headers: Any,
+        newurl: str,
+    ) -> urllib.request.Request | None:
+        original_host = urllib.parse.urlsplit(req.full_url).hostname
+        new_host = urllib.parse.urlsplit(newurl).hostname
+        if new_host != original_host:
+            raise urllib.error.HTTPError(
+                newurl, code, f"refusing cross-host redirect from {original_host!r} to {new_host!r}", headers, fp
+            )
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
 class UrllibTransport:
     """Real transport, used only by `main()` — stdlib only, no new dependency."""
 
     def __init__(self, timeout_seconds: float = 30.0) -> None:
         self._timeout_seconds = timeout_seconds
+        self._opener = urllib.request.build_opener(_SameHostRedirectHandler)
 
     def request(self, method: str, url: str, headers: Mapping[str, str], body: bytes | None) -> HttpResponse:
         req = urllib.request.Request(url, data=body, headers=dict(headers), method=method)  # noqa: S310
         try:
-            with urllib.request.urlopen(req, timeout=self._timeout_seconds) as resp:  # noqa: S310
+            with self._opener.open(req, timeout=self._timeout_seconds) as resp:
                 return HttpResponse(status=resp.status, headers=list(resp.getheaders()), body=resp.read())
         except urllib.error.HTTPError as exc:
             error_headers = list(exc.headers.items()) if exc.headers is not None else []
@@ -405,6 +454,11 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument("--expect-substring", default=None, help="assert this substring appears in an answer")
     parser.add_argument("--warm-slo", type=float, default=WARM_SLO_SECONDS)
     parser.add_argument("--cold-slo", type=float, default=COLD_SLO_SECONDS)
+    parser.add_argument(
+        "--allow-host",
+        default=DEFAULT_ALLOWED_HOST,
+        help=f"the only host this script is allowed to send requests to (default: {DEFAULT_ALLOWED_HOST})",
+    )
     return parser.parse_args(argv)
 
 
@@ -417,6 +471,15 @@ def main(argv: Sequence[str] | None = None, stdout: IO[str] = sys.stdout) -> int
 
         cfn_client = boto3.client("cloudformation", region_name=args.region)
         base_url = resolve_api_url(cfn_client, args.stack_name)
+
+    target_host = validate_target_host(base_url, args.allow_host)
+    print(f"Target host: {target_host}", file=stdout)
+
+    if args.exhaust_limits:
+        print(
+            "WARNING: --exhaust-limits will consume this session's full daily question quota.",
+            file=sys.stderr,
+        )
 
     report = run_smoke_test(
         UrllibTransport(),
