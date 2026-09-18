@@ -55,8 +55,10 @@ Verified against AWS documentation before writing (URLs cited per resource):
   wildcard covers runtime-endpoint/qualifier sub-resources a bare runtime ARN
   does not match — verified against
   https://docs.aws.amazon.com/bedrock-agentcore/latest/APIReference/API_InvokeAgentRuntime.html);
-  `dynamodb:GetItem`/`PutItem`/`UpdateItem`/`Query` (PR3b's apply-progress
-  note: `Query` is required for the IP rate limiter's sliding-window read) on
+  `dynamodb:GetItem`/`PutItem`/`UpdateItem` (no `Query`: PR3b's original
+  sliding-window read was later replaced by a point `GetItem` on the
+  previous-minute bucket — `src/api/adapters/dynamo_rate_limiter.py::_check_ip`
+  — so `Query` was dropped from the role as a stale, unused grant) on
   exactly the one table ARN; explicit `logs:CreateLogStream`/`PutLogEvents`
   on this function's own log group, never the
   `AWSLambdaBasicExecutionRole` managed policy (its `Resource: "*"` would
@@ -183,7 +185,10 @@ class ApiStack(Stack):
         role.add_to_policy(
             iam.PolicyStatement(
                 sid="ReadWriteSessionsTable",
-                actions=["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem", "dynamodb:Query"],
+                # No `Query`: the IP rate limiter reads the previous-minute
+                # bucket with a point `GetItem`, not a `Query`
+                # (`src/api/adapters/dynamo_rate_limiter.py::_check_ip`).
+                actions=["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem"],
                 resources=[self.data.table.table_arn],
             )
         )

@@ -547,11 +547,14 @@ in the gate.
   "Action":"bedrock-agentcore:InvokeAgentRuntime",
   "Resource":["<AgentRuntimeArn>","<AgentRuntimeArn>/*"]},
  {"Sid":"OneTable","Effect":"Allow",
-  "Action":["dynamodb:GetItem","dynamodb:Query","dynamodb:PutItem","dynamodb:UpdateItem"],
+  "Action":["dynamodb:GetItem","dynamodb:PutItem","dynamodb:UpdateItem"],
   "Resource":"<TableArn>"}]}
 ```
 
-No `bedrock:*`, no `s3:*`, no `dynamodb:Scan`, no wildcard resource. Notably **not**
+No `bedrock:*`, no `s3:*`, no `dynamodb:Scan`, no `dynamodb:Query` (the IP rate
+limiter reads the previous-minute bucket with a point `GetItem`, not a
+`Query` — `src/api/adapters/dynamo_rate_limiter.py::_check_ip`), no wildcard
+resource. Notably **not**
 granted: `bedrock-agentcore:InvokeAgentRuntimeCommand`, which is arbitrary shell
 execution inside the live microVM with the runtime's full role (`agents-harden`). Logs
 come from the managed `AWSLambdaBasicExecutionRole`.

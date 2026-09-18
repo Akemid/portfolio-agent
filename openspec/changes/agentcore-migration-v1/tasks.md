@@ -409,7 +409,9 @@ Split into PR8a (AgentStack: 8.1, 8.2, the AgentStack half of 8.4) and PR8b
       "to verify at deploy" risk this leaves open).
 - [x] 8.3 `infra/stacks/api_stack.py` — Lambda (Python 3.12, 512 MB) with least-privilege
       role (`bedrock-agentcore:InvokeAgentRuntime` on one runtime ARN, `dynamodb:GetItem|
-      Query|PutItem|UpdateItem` on one table ARN, no wildcard), HTTP API `POST /v1/chat`,
+      PutItem|UpdateItem` on one table ARN — no `Query`: the IP rate limiter reads the
+      previous-minute bucket with a point `GetItem`, not a `Query` — no wildcard), HTTP
+      API `POST /v1/chat`,
       custom domain `api.sergiomondragon.com` + ACM cert requested in `us-east-1` (DNS
       validation CNAME to be added manually at DigitalOcean — documented, not automated),
       CORS allowlist from `Settings`.

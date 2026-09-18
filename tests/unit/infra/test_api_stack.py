@@ -121,11 +121,14 @@ def test_lambda_role_has_exactly_one_runtime_and_table_arn(fake_agent_zip: str, 
 
     table_statement = next(s for s in _all_policy_statements(template_json) if s.get("Sid") == "ReadWriteSessionsTable")
     assert table_statement["Effect"] == "Allow"
+    # `Query` is deliberately absent: PR3b replaced the IP rate limiter's
+    # sliding-window read with a point `GetItem` on the previous-minute
+    # bucket (`src/api/adapters/dynamo_rate_limiter.py::_check_ip`), so
+    # nothing in `src/api` ever issues a `Query` against this table.
     assert set(table_statement["Action"]) == {
         "dynamodb:GetItem",
         "dynamodb:PutItem",
         "dynamodb:UpdateItem",
-        "dynamodb:Query",
     }
     table_resource = table_statement["Resource"]
     assert not isinstance(table_resource, list)  # exactly one ARN, not a list of several
