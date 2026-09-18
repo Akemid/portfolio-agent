@@ -45,12 +45,20 @@ DEFAULT_ORIGIN = "https://sergiomondragon.com"
 # `chat-endpoint` spec, *CORS Restriction*; the API's own custom domain (task 8.3) —
 # a resolved/overridden `--api-url` must never silently point anywhere else.
 DEFAULT_ALLOWED_HOST = "api.sergiomondragon.com"
-DEFAULT_SESSIONS = 3
+# 20 sessions x 3 questions/session = cold N=20, warm N=40 — the smallest sample
+# sizes at which a nearest-rank p95 is not simply max() (see `_percentile_label`
+# and `compute_percentile`'s module docstring note below).
+DEFAULT_SESSIONS = 20
 DEFAULT_QUESTIONS_PER_SESSION = 3
 DEFAULT_SESSION_DAILY_LIMIT = 10
 # owner-confirmed split latency SLO (design.md SS1, "Success Criteria"; state.yaml owner_confirmed).
 WARM_SLO_SECONDS = 3.5
 COLD_SLO_SECONDS = 10.0
+# Nearest-rank p95 needs at least this many samples to differ from max(): with
+# N < 20, ceil(0.95 * N) == N for every N from 1 to 19, so the "p95" would
+# silently just be the maximum observed latency — misleading if presented as a
+# percentile. Below this floor, `_percentile_label` labels it honestly instead.
+_MIN_SAMPLES_FOR_P95 = 20
 _DEFAULT_QUESTIONS = (
     "What is your professional experience?",
     "What technologies have you worked with?",
@@ -59,6 +67,9 @@ _DEFAULT_QUESTIONS = (
 _CORS_HEADER = "access-control-allow-origin"
 _RETRY_AFTER_HEADER = "retry-after"
 _SET_COOKIE_HEADER = "set-cookie"
+# `session-identity` spec, *Cookie Attributes*: every session cookie MUST carry
+# all four of these flags.
+_REQUIRED_COOKIE_FLAGS = ("HttpOnly", "Secure", "SameSite=Lax", "Path=/")
 
 
 @dataclass(frozen=True)
@@ -150,6 +161,10 @@ class ChatResult:
     language: str | None
     set_cookie: str | None
     headers: list[tuple[str, str]]
+    # `session-identity` spec check on the raw `Set-Cookie` header, before
+    # `_parse_cookie_pair` strips the flags out. `None` when no `Set-Cookie`
+    # header was sent at all (expected on warm requests — no new cookie).
+    cookie_flags_valid: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -175,6 +190,7 @@ class SmokeReport:
     warm_pass: bool
     cors_pass: bool
     shape_pass: bool
+    cookie_flags_pass: bool
     rate_limit_pass: bool | None
     expected_fact_found: bool | None
     passed: bool
@@ -206,6 +222,23 @@ def check_single_cors_header(headers: Sequence[tuple[str, str]]) -> bool:
 def check_response_shape(result: ChatResult) -> bool:
     """`chat-endpoint` spec, *Response Contract*: `{answer: string, language: "en"|"es"}`."""
     return result.status == 200 and isinstance(result.answer, str) and result.language in ("en", "es")
+
+
+def check_set_cookie_security_flags(raw_set_cookie: str) -> bool:
+    """`session-identity` spec, *Cookie Attributes*: every session cookie the
+    system sets MUST carry `HttpOnly`, `Secure`, `SameSite=Lax`, and `Path=/`.
+    Checked against the RAW header — before `_parse_cookie_pair` strips the
+    flags out for the client's own `Cookie` resend."""
+    return all(flag in raw_set_cookie for flag in _REQUIRED_COOKIE_FLAGS)
+
+
+def _percentile_label(sample_count: int) -> str:
+    """Nearest-rank p95 collapses to max() below `_MIN_SAMPLES_FOR_P95`
+    samples — label the report honestly instead of implying more precision
+    than the sample size supports."""
+    if sample_count >= _MIN_SAMPLES_FOR_P95:
+        return "p95"
+    return f"max (N={sample_count}, too few samples for a p95)"
 
 
 def _first_header_value(headers: Sequence[tuple[str, str]], name: str) -> str | None:
@@ -256,6 +289,7 @@ def send_chat_request(
             language = data.get("language") if isinstance(data.get("language"), str) else None
 
     raw_cookie = _first_header_value(response.headers, _SET_COOKIE_HEADER)
+    cookie_flags_valid = check_set_cookie_security_flags(raw_cookie) if raw_cookie is not None else None
     set_cookie = _parse_cookie_pair(raw_cookie) if raw_cookie is not None else None
 
     return ChatResult(
@@ -264,6 +298,7 @@ def send_chat_request(
         answer=answer,
         language=language,
         set_cookie=set_cookie,
+        cookie_flags_valid=cookie_flags_valid,
         headers=response.headers,
     )
 
@@ -336,6 +371,7 @@ def run_smoke_test(
     warm_latencies: list[float] = []
     cors_ok = True
     shape_ok = True
+    cookie_flags_ok = True
     expected_fact_found: bool | None = None if expect_substring is None else False
     rate_limit_pass: bool | None = None
     all_answers: list[str] = []
@@ -352,6 +388,8 @@ def run_smoke_test(
         for result in (session.cold, *session.warm):
             cors_ok = cors_ok and check_single_cors_header(result.headers)
             shape_ok = shape_ok and check_response_shape(result)
+            if result.cookie_flags_valid is False:
+                cookie_flags_ok = False
             if result.answer is not None:
                 all_answers.append(result.answer)
 
@@ -380,6 +418,7 @@ def run_smoke_test(
     passed = (
         cors_ok
         and shape_ok
+        and cookie_flags_ok
         and cold_pass
         and warm_pass
         and rate_limit_pass is not False
@@ -397,6 +436,7 @@ def run_smoke_test(
         warm_pass=warm_pass,
         cors_pass=cors_ok,
         shape_pass=shape_ok,
+        cookie_flags_pass=cookie_flags_ok,
         rate_limit_pass=rate_limit_pass,
         expected_fact_found=expected_fact_found,
         passed=passed,
@@ -410,13 +450,16 @@ def _status_word(value: bool) -> str:
 
 
 def format_report(report: SmokeReport) -> str:
+    cold_label = _percentile_label(len(report.cold_latencies))
+    warm_label = _percentile_label(len(report.warm_latencies))
     lines = [
-        f"cold p50={report.cold_p50:.2f}s p95={report.cold_p95:.2f}s "
+        f"cold p50={report.cold_p50:.2f}s {cold_label}={report.cold_p95:.2f}s "
         f"(SLO < {report.cold_slo_seconds}s): {_status_word(report.cold_pass)}",
-        f"warm p50={report.warm_p50:.2f}s p95={report.warm_p95:.2f}s "
+        f"warm p50={report.warm_p50:.2f}s {warm_label}={report.warm_p95:.2f}s "
         f"(SLO < {report.warm_slo_seconds}s): {_status_word(report.warm_pass)}",
         f"CORS (exactly one Access-Control-Allow-Origin): {_status_word(report.cors_pass)}",
         f"Response shape ({{answer, language}}): {_status_word(report.shape_pass)}",
+        f"Set-Cookie security flags (HttpOnly; Secure; SameSite=Lax; Path=/): {_status_word(report.cookie_flags_pass)}",
     ]
     if report.rate_limit_pass is not None:
         lines.append(f"429 + Retry-After on limit exhaustion: {_status_word(report.rate_limit_pass)}")

@@ -18,11 +18,14 @@ import pytest
 from smoke.test_smoke import (
     COLD_SLO_SECONDS,
     DEFAULT_ALLOWED_HOST,
+    DEFAULT_QUESTIONS_PER_SESSION,
+    DEFAULT_SESSIONS,
     WARM_SLO_SECONDS,
     HttpResponse,
     TargetValidationError,
     _SameHostRedirectHandler,
     check_response_shape,
+    check_set_cookie_security_flags,
     check_single_cors_header,
     compute_percentile,
     count_header,
@@ -59,6 +62,18 @@ def _ok_response(
 def _rate_limited_response() -> HttpResponse:
     body = json.dumps({"error": "rate_limited"}).encode()
     return HttpResponse(status=429, headers=[("Retry-After", "60")], body=body)
+
+
+def _ok_response_missing_cookie_flag(answer: str = "I have worked with Python.", language: str = "en") -> HttpResponse:
+    """Same as `_ok_response` but the `Set-Cookie` header is missing `Secure`
+    — used to exercise the flag check's failure path."""
+    headers = [
+        ("Content-Type", "application/json"),
+        ("Access-Control-Allow-Origin", "https://sergiomondragon.com"),
+        ("Set-Cookie", "session=abc123; HttpOnly; SameSite=Lax; Path=/"),
+    ]
+    body = json.dumps({"answer": answer, "language": language}).encode()
+    return HttpResponse(status=200, headers=headers, body=body)
 
 
 # --- compute_percentile -------------------------------------------------------
@@ -319,3 +334,98 @@ def test_same_host_redirect_handler_allows_same_host_redirect() -> None:
 
     assert new_request is not None
     assert new_request.full_url == f"https://{DEFAULT_ALLOWED_HOST}/v1/chat-redirected"
+
+
+# --- percentile honesty at small N -----------------------------------------------
+
+
+def test_defaults_give_at_least_20_samples_per_population() -> None:
+    """cold N == sessions, warm N == sessions * (questions_per_session - 1) —
+    both must reach the 20-sample floor a nearest-rank p95 needs to mean
+    anything more than max()."""
+    assert DEFAULT_SESSIONS == 20
+    assert DEFAULT_SESSIONS >= 20
+    assert DEFAULT_SESSIONS * (DEFAULT_QUESTIONS_PER_SESSION - 1) >= 20
+
+
+def test_format_report_labels_p95_normally_with_enough_samples() -> None:
+    responses = [_ok_response() for _ in range(60)]  # 20 sessions x 3 questions
+    transport = _FakeTransport(responses)
+    clock_values = iter(x * 0.1 for x in range(200))
+
+    report = run_smoke_test(
+        transport,
+        base_url="https://api.example.com",
+        sessions=20,
+        questions_per_session=3,
+        clock_fn=lambda: next(clock_values),
+    )
+
+    text = format_report(report)
+
+    assert " p95=" in text
+    assert text.count(" p95=") == 2
+    assert "too few samples" not in text
+
+
+def test_format_report_labels_max_as_dishonest_p95_below_20_samples() -> None:
+    responses = [_ok_response() for _ in range(6)]  # 2 sessions x 3 questions
+    transport = _FakeTransport(responses)
+    clock_values = iter(x * 0.1 for x in range(100))
+
+    report = run_smoke_test(
+        transport,
+        base_url="https://api.example.com",
+        sessions=2,
+        questions_per_session=3,
+        clock_fn=lambda: next(clock_values),
+    )
+
+    text = format_report(report)
+
+    assert "max (N=2, too few samples for a p95)=" in text
+    assert "max (N=4, too few samples for a p95)=" in text
+
+
+# --- Set-Cookie security flags ----------------------------------------------------
+
+
+def test_check_set_cookie_security_flags_true_when_all_flags_present() -> None:
+    assert check_set_cookie_security_flags("session=abc123; HttpOnly; Secure; SameSite=Lax; Path=/") is True
+
+
+def test_check_set_cookie_security_flags_false_when_a_flag_is_missing() -> None:
+    assert check_set_cookie_security_flags("session=abc123; HttpOnly; SameSite=Lax; Path=/") is False
+
+
+def test_send_chat_request_flags_cookie_missing_a_security_attribute() -> None:
+    transport = _FakeTransport([_ok_response_missing_cookie_flag()])
+
+    result = send_chat_request(transport, "https://api.example.com", "hi")
+
+    assert result.cookie_flags_valid is False
+    assert result.set_cookie == "session=abc123"
+
+
+def test_send_chat_request_cookie_flags_valid_when_all_present() -> None:
+    transport = _FakeTransport([_ok_response()])
+
+    result = send_chat_request(transport, "https://api.example.com", "hi")
+
+    assert result.cookie_flags_valid is True
+
+
+def test_run_smoke_test_fails_when_set_cookie_is_missing_a_security_flag() -> None:
+    transport = _FakeTransport([_ok_response_missing_cookie_flag(), _ok_response()])
+    clock_values = iter(x * 0.1 for x in range(20))
+
+    report = run_smoke_test(
+        transport,
+        base_url="https://api.example.com",
+        sessions=1,
+        questions_per_session=2,
+        clock_fn=lambda: next(clock_values),
+    )
+
+    assert report.cookie_flags_pass is False
+    assert report.passed is False
