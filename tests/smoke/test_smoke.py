@@ -36,10 +36,21 @@ import urllib.parse
 import urllib.request
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import IO, Any, Protocol
 
+# `pyproject.toml`'s `pythonpath = ["src", "scripts", "."]` puts `src/` on the
+# path under pytest, but a direct `uv run python tests/smoke/test_smoke.py`
+# invocation has no such hook — add it here so `shared.names` always resolves
+# (same reasoning as `scripts/sync_content.py` and `infra/app.py`).
+_SRC = Path(__file__).resolve().parent.parent.parent / "src"
+if str(_SRC) not in sys.path:
+    sys.path.insert(0, str(_SRC))
+
+from shared.names import API_STACK_NAME  # noqa: E402
+
 CHAT_PATH = "/v1/chat"
-DEFAULT_STACK_NAME = "portfolio-agent-api"
+DEFAULT_STACK_NAME = API_STACK_NAME
 DEFAULT_REGION = "us-east-1"
 DEFAULT_ORIGIN = "https://sergiomondragon.com"
 # `chat-endpoint` spec, *CORS Restriction*; the API's own custom domain (task 8.3) —

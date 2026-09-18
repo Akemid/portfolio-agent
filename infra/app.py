@@ -36,6 +36,7 @@ from aws_cdk import App, Environment, Tags  # noqa: E402
 from infra.stacks.agent_stack import AgentStack  # noqa: E402
 from infra.stacks.api_stack import DOMAIN_NAME, ApiStack  # noqa: E402
 from infra.stacks.data_stack import DataStack  # noqa: E402
+from shared.names import AGENT_STACK_NAME, API_STACK_NAME, DATA_STACK_NAME  # noqa: E402
 
 _DEFAULT_AGENT_ZIP_PATH = Path(__file__).resolve().parent.parent / "build" / "agent.zip"
 _DEFAULT_LAMBDA_ZIP_PATH = Path(__file__).resolve().parent.parent / "build" / "lambda.zip"
@@ -55,12 +56,12 @@ def build_app() -> App:
         region=os.environ.get("CDK_DEFAULT_REGION", "us-east-1"),
     )
 
-    data_stack = DataStack(app, "portfolio-agent-data", env=env)
+    data_stack = DataStack(app, DATA_STACK_NAME, env=env)
     Tags.of(data_stack).add("project", "portfolio-agent")
 
     agent_stack = AgentStack(
         app,
-        "portfolio-agent-agent",
+        AGENT_STACK_NAME,
         data=data_stack,
         agent_zip_path=os.environ.get("AGENT_ZIP_PATH", str(_DEFAULT_AGENT_ZIP_PATH)),
         env=env,
@@ -70,7 +71,7 @@ def build_app() -> App:
 
     api_stack = ApiStack(
         app,
-        "portfolio-agent-api",
+        API_STACK_NAME,
         data=data_stack,
         agent=agent_stack,
         domain_name=DOMAIN_NAME,

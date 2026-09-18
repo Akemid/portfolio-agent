@@ -51,12 +51,22 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import IO, Any
 
+# `pyproject.toml`'s `pythonpath = ["src", "scripts", "."]` puts `src/` on the
+# path under pytest, but a direct `uv run python scripts/sync_content.py`
+# invocation has no such hook (same reasoning as `infra/app.py`'s `_SRC`
+# insertion) — add it here so `shared.names` always resolves.
+_SRC = Path(__file__).resolve().parent.parent / "src"
+if str(_SRC) not in sys.path:
+    sys.path.insert(0, str(_SRC))
+
+from shared.names import CONTENT_DATA_SOURCE_NAME, DATA_STACK_NAME  # noqa: E402
+
 ALLOWED_EXTENSIONS = frozenset({".pdf", ".md"})
 _CONTENT_TYPE_BY_EXTENSION: Mapping[str, str] = {".pdf": "application/pdf", ".md": "text/markdown"}
-DEFAULT_STACK_NAME = "portfolio-agent-data"
+DEFAULT_STACK_NAME = DATA_STACK_NAME
 DEFAULT_REGION = "us-east-1"
 # Matches `infra/stacks/data_stack.py`'s `CfnDataSource(name=...)`.
-DEFAULT_DATA_SOURCE_NAME = "portfolio-agent-content"
+DEFAULT_DATA_SOURCE_NAME = CONTENT_DATA_SOURCE_NAME
 _TERMINAL_STATUSES = frozenset({"COMPLETE", "FAILED", "STOPPED"})
 DEFAULT_POLL_INTERVAL_SECONDS = 10.0
 DEFAULT_TIMEOUT_SECONDS = 600.0
