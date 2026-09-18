@@ -479,14 +479,24 @@ Split into PR8a (AgentStack: 8.1, 8.2, the AgentStack half of 8.4) and PR8b
       `run_sync`).
       GREEN: implement. Acceptance: `knowledge-base` — *Manual Sync
       Procedure*. Est: ~30+95 lines (merged, actual ~185 lines incl. CLI).
-- [ ] 9.3 `tests/smoke/test_smoke.py` (never runs in CI, never counted toward coverage):
-      real `POST /v1/chat` against a deployed stack asserts a known CV fact is
-      retrievable, the `Set-Cookie` header carries all four flags, the 11th question in
-      a session returns 429, and **warm p95 and cold first-call latency are reported as
-      two separate numbers**.
-      Acceptance: proposal *Success Criteria* (latency split); `chat-endpoint` —
-      *End-to-End Latency Budget*; `architecture/latency-slo` decision (warm < 3.5 s,
-      first-of-session < 10 s). Est: ~135 lines.
+- [x] 9.3 `tests/smoke/test_smoke.py` (defines no `def test_*` function, so
+      `uv run pytest` collects but never executes it — never runs in CI, never
+      counted toward `--cov=src`): real `POST /v1/chat` against a deployed
+      stack, run as `uv run python tests/smoke/test_smoke.py`. Runs N fresh
+      sessions, separates each session's first (cold) request from its warm
+      follow-ups, asserts the `{answer, language}` response shape, exactly
+      one `Access-Control-Allow-Origin` header, and reports warm and
+      cold-first-call p50/p95 as two separate numbers against the split SLO.
+      `--exhaust-limits` (opt-in, off by default) additionally exceeds the
+      session cap and asserts 429 + `Retry-After`; `--expect-substring`
+      (opt-in) asserts a known fact appears in an answer.
+      RED: `tests/unit/scripts/test_smoke_script.py` (19 tests: percentile
+      math, CORS/shape checks, cookie reuse across warm requests, SLO
+      pass/fail, rate-limit-exhaustion opt-in, report formatting) with an
+      injected fake transport — no network.
+      GREEN: implement. Acceptance: proposal *Success Criteria* (latency
+      split); `chat-endpoint` — *End-to-End Latency Budget*, *CORS
+      Restriction*, *Response Contract*, *Rate-Limit Surfacing*.
 - [ ] 9.4 Runbooks — `docs/runbooks/content-update.md` (upload -> sync -> smoke test;
       do not sync while demonstrating the bot), `docs/runbooks/rollback.md` (frontend
       config revert; `cdk destroy` in reverse order `ApiStack -> AgentStack ->
