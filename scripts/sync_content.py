@@ -52,6 +52,7 @@ from pathlib import Path
 from typing import IO, Any
 
 ALLOWED_EXTENSIONS = frozenset({".pdf", ".md"})
+_CONTENT_TYPE_BY_EXTENSION: Mapping[str, str] = {".pdf": "application/pdf", ".md": "text/markdown"}
 DEFAULT_STACK_NAME = "portfolio-agent-data"
 DEFAULT_REGION = "us-east-1"
 # Matches `infra/stacks/data_stack.py`'s `CfnDataSource(name=...)`.
@@ -152,14 +153,25 @@ def resolve_data_source_id(bedrock_agent_client: Any, knowledge_base_id: str, da
     return str(matches[0]["dataSourceId"])
 
 
+def compute_s3_key(content_dir: Path, path: Path) -> str:
+    """The S3 key a local content file uploads to — its path under
+    `content_dir`, prefixed with `content/` (the `knowledge-base` spec's
+    fixed S3 layout)."""
+    return f"content/{path.relative_to(content_dir).as_posix()}"
+
+
 def upload_files(s3_client: Any, bucket_name: str, content_dir: Path, files: Sequence[Path]) -> list[str]:
     """Upload each file, preserving its path under `content_dir` as the S3 key
     under `content/` — this is what keeps the local layout and the
-    `knowledge-base` spec's S3 layout identical."""
+    `knowledge-base` spec's S3 layout identical. `ContentType` is derived from
+    the extension so the Knowledge Base's ingestion parser and any browser
+    that later fetches the object both see the right MIME type instead of
+    S3's `binary/octet-stream` default."""
     keys: list[str] = []
     for path in files:
-        key = f"content/{path.relative_to(content_dir).as_posix()}"
-        s3_client.put_object(Bucket=bucket_name, Key=key, Body=path.read_bytes())
+        key = compute_s3_key(content_dir, path)
+        content_type = _CONTENT_TYPE_BY_EXTENSION.get(path.suffix.lower(), "application/octet-stream")
+        s3_client.put_object(Bucket=bucket_name, Key=key, Body=path.read_bytes(), ContentType=content_type)
         keys.append(key)
     return keys
 
@@ -215,6 +227,7 @@ def run_sync(
     bucket_name: str,
     knowledge_base_id: str,
     data_source_id: str,
+    dry_run: bool = False,
     sleep_fn: Callable[[float], None] = time.sleep,
     poll_interval_seconds: float = DEFAULT_POLL_INTERVAL_SECONDS,
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
@@ -222,12 +235,23 @@ def run_sync(
     stderr: IO[str] = sys.stderr,
 ) -> int:
     """Discover, upload, ingest, and report — the whole operator workflow.
-    Returns a process exit code (0 success, 1 on any failure)."""
+    Returns a process exit code (0 success, 1 on any failure).
+
+    `dry_run=True` stops right after discovery: it prints the planned S3 keys
+    and returns 0 without ever calling `s3_client` or `bedrock_agent_client`
+    — a safe way to preview a sync before it touches anything."""
     try:
         files = discover_content_files(content_dir)
     except ContentValidationError as exc:
         print(str(exc), file=stderr)
         return 1
+
+    if dry_run:
+        planned_keys = [compute_s3_key(content_dir, path) for path in files]
+        print(f"Dry run: would upload {len(planned_keys)} file(s):", file=stdout)
+        for key in planned_keys:
+            print(f"  {key}", file=stdout)
+        return 0
 
     uploaded_keys = upload_files(s3_client, bucket_name, content_dir, files)
     print(f"Uploaded {len(uploaded_keys)} file(s) to s3://{bucket_name}/content/", file=stdout)
@@ -266,6 +290,11 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument("--data-source-id", default=None, help="override the ListDataSources lookup")
     parser.add_argument("--poll-interval", type=float, default=DEFAULT_POLL_INTERVAL_SECONDS)
     parser.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT_SECONDS)
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="discover and print the planned S3 keys, then exit — no upload, no ingestion",
+    )
     return parser.parse_args(argv)
 
 
@@ -273,6 +302,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     import boto3  # local import: keeps the pure functions above importable/testable with zero AWS SDK setup
 
     args = _parse_args(argv)
+
+    if args.dry_run:
+        # No stack/data-source resolution either: a dry run must never touch
+        # AWS at all, not even a read-only lookup.
+        return run_sync(
+            content_dir=args.content_dir,
+            s3_client=None,
+            bedrock_agent_client=None,
+            bucket_name="",
+            knowledge_base_id="",
+            data_source_id="",
+            dry_run=True,
+        )
 
     need_bucket = args.bucket_name is None
     need_kb = args.knowledge_base_id is None

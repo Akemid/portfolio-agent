@@ -271,6 +271,21 @@ def test_upload_files_puts_each_file_with_content_prefixed_key(tmp_path: Path) -
     assert client.calls[0]["Body"] == b"%PDF-1.4"
 
 
+def test_upload_files_sets_content_type_from_extension(tmp_path: Path) -> None:
+    (tmp_path / "cv").mkdir()
+    (tmp_path / "portfolio" / "en").mkdir(parents=True)
+    pdf = tmp_path / "cv" / "resume.pdf"
+    md = tmp_path / "portfolio" / "en" / "about.md"
+    pdf.write_bytes(b"%PDF-1.4")
+    md.write_text("# About")
+    client = _FakeS3Client()
+
+    upload_files(client, "bucket-1", tmp_path, [pdf, md])
+
+    assert client.calls[0]["ContentType"] == "application/pdf"
+    assert client.calls[1]["ContentType"] == "text/markdown"
+
+
 # --- start_and_wait_for_ingestion ---------------------------------------------
 
 
@@ -406,6 +421,32 @@ def test_run_sync_returns_0_on_complete_and_prints_summary(tmp_path: Path) -> No
     assert len(s3_client.calls) == 1
     assert "Uploaded 1 file" in stdout.getvalue()
     assert "COMPLETE" in stdout.getvalue()
+
+
+def test_run_sync_dry_run_discovers_and_prints_keys_without_uploading(tmp_path: Path) -> None:
+    (tmp_path / "cv").mkdir()
+    (tmp_path / "cv" / "resume.pdf").write_bytes(b"%PDF-1.4")
+    stdout = io.StringIO()
+    s3_client = _FakeS3Client()
+    bedrock_client = _FakeBedrockAgentClient([_job("COMPLETE")])
+
+    exit_code = run_sync(
+        content_dir=tmp_path,
+        s3_client=s3_client,
+        bedrock_agent_client=bedrock_client,
+        bucket_name="bucket-1",
+        knowledge_base_id="kb-1",
+        data_source_id="ds-1",
+        dry_run=True,
+        sleep_fn=lambda _seconds: None,
+        stdout=stdout,
+        stderr=io.StringIO(),
+    )
+
+    assert exit_code == 0
+    assert s3_client.calls == []
+    assert bedrock_client.start_calls == []
+    assert "content/cv/resume.pdf" in stdout.getvalue()
 
 
 def test_run_sync_returns_1_on_failed_status(tmp_path: Path) -> None:
