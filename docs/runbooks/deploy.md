@@ -57,9 +57,11 @@ npx --yes aws-cdk@2 deploy portfolio-agent-agent
 npx --yes aws-cdk@2 deploy portfolio-agent-api
 ```
 
-`portfolio-agent-api` will not finish creating until the ACM certificate
-below reaches `ISSUED` — expect the deploy to pause there on a first-time
-setup.
+TO VERIFY AT DEPLOY: `portfolio-agent-api` is expected to stall until the ACM
+certificate below reaches `ISSUED`, because the custom domain depends on it.
+CloudFormation's exact behaviour here (a long wait versus a timeout) has not
+been observed on a real account. If it times out, create the validation CNAME
+from step 4 and re-run the deploy.
 
 ### 3. Confirm the Nova Micro inference profile id
 
