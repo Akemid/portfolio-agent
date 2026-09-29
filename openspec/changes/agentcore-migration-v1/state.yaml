@@ -1515,16 +1515,50 @@ phases:
           apply time), `--help` still works for both scripts, `pytest
           tests/smoke -q` still collects nothing.
   verify:
-    status: pending
+    status: done
     depends_on: [apply]
+    engram_topic_key: sdd/agentcore-migration-v1/verify-report
+    artifact: openspec/changes/agentcore-migration-v1/verify-report.md
+    verdict: PASS WITH WARNINGS
+    findings: { critical: 0, warning: 7, suggestion: 4 }
+    note: >-
+      Verified 2026-09-21 against feat/ops-docs (the tip of the stacked PR
+      chain). All code gates pass live: 408 tests, 99.87% coverage, ruff
+      check/format clean, mypy src infra clean, `cdk synth --all` reproduced
+      locally with neutralized credentials (all 3 stacks), zero personal
+      content across all 50 commits. Every spec requirement maps to
+      implementation + a passing test; LLM-behavior/live-deploy-dependent
+      requirements are correctly PARTIAL, not defects. The real gap is
+      delivery state, not code: only 7 of 16 opened PRs are merged to main
+      (PR0-PR4a); PR5-PR9b (including all 3 CDK stacks) are open, unreviewed,
+      and stacked on each other's unmerged branches (a feature-branch chain,
+      not the recorded stacked-to-main decision). PR7/PR8a/PR8b/PR9a (#12-#15)
+      show a stale failing CI check from before the npx-aws-cdk@2 synth fix
+      (0968263) — not a current code defect, but each branch needs the fix
+      before merge. Zero GitHub-native PR reviews exist on any of the 16 PRs.
+      tasks.md 9.4/9.5 are unchecked but fully implemented (checkbox/state
+      drift only); this apply.batches list has no PR9b entry despite PR9b
+      being committed and opened as PR #16. Full detail and the pre-deploy
+      checklist are in the artifact above.
   archive:
     status: pending
     depends_on: [verify]
+    blocked_by: >-
+      Not ready: 9 of 16 PRs unmerged (PR5-PR9b), 4 with stale failing CI,
+      zero GitHub-native reviews recorded, task 9.G final gate not run, the
+      external Portfolio widget change (10.1) not started, and no real
+      deployment has happened yet to confirm latency/cost/grounding.
 
 next_recommended:
   - sdd-apply
 
-blocked_reasons: []
+blocked_reasons:
+  - >-
+    9 of 16 opened PRs (PR5 through PR9b) are not merged to main, including
+    all three CDK stacks — the stack cannot yet be "recreated from scratch"
+    from main. PR7/PR8a/PR8b/PR9a additionally show a stale failing GitHub CI
+    check that must be cleared (rebase onto the npx-aws-cdk@2 synth fix in
+    0968263) before merge. See verify-report.md for the full punch list.
 
 delivery:
   delivery_strategy: ask-on-risk
