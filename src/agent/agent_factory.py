@@ -6,6 +6,12 @@ Docs verified:
 - `BedrockModel(max_tokens=..., temperature=...)` output-bounding params:
   https://github.com/strands-agents/docs/blob/main/site/src/content/docs/user-guide/deploy/operating-agents-in-production.mdx
   (via Context7 `/strands-agents/docs`, 2026-09-15)
+- `BedrockModel(streaming=...)`: `streaming` defaults to `True` (uses
+  `ConverseStream`); `streaming=False` uses the non-streaming `Converse` API
+  instead:
+  https://github.com/strands-agents/docs/blob/main/site/src/content/docs/user-guide/concepts/model-providers/amazon-bedrock.mdx
+  ("Configure Streaming and Non-Streaming Bedrock Models", via Context7
+  `/strands-agents/docs`, 2026-09-16)
 """
 
 from __future__ import annotations
@@ -41,6 +47,13 @@ def build_agent() -> Agent:
         region_name=settings.aws_region,
         max_tokens=settings.max_tokens,
         temperature=settings.temperature,
+        # v1 is non-streaming (design.md SS9.2, `str(agent(prompt))`): the
+        # agent execution role only grants `bedrock:InvokeModel`, not
+        # `bedrock:InvokeModelWithResponseStream`, which Strands' default
+        # `streaming=True` would require. A future v2 that adds true
+        # streaming responses must also add that action to the role
+        # (`infra/stacks/agent_stack.py`'s `AnswerModelOnly` statement).
+        streaming=False,
     )
     retrieve_client = boto3.client("bedrock-agent-runtime", region_name=settings.aws_region)
     search_tool = build_search_tool(

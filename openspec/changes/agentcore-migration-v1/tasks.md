@@ -368,11 +368,24 @@ sub-PR if the real diff exceeds ~450 lines; the split points are noted inline be
 
 ## Phase 8: CDK AgentStack + ApiStack (PR 8)
 
-- [ ] 8.1 `scripts/build_agent.sh` — `uv pip install --target build/agent` + copy
+Split into PR8a (AgentStack: 8.1, 8.2, the AgentStack half of 8.4) and PR8b
+(ApiStack: 8.3, the remaining ApiStack half of 8.4, 8.5) per 8.G's a/b note below.
+
+- [x] 8.1 `scripts/build_agent.sh` — `uv pip install --target build/agent` + copy
       `src/agent`, producing the input directory for the CDK `Asset`.
       No RED (shell packaging step). GREEN: write the script.
       Acceptance: design §RQ-2 packaging flow. Est: ~20 lines.
-- [ ] 8.2 `infra/stacks/agent_stack.py` — `aws_s3_assets.Asset(path="build/agent")`,
+      **PR8a note**: the script also zips `build/agent/` into `build/agent.zip`
+      (deterministic `zip -X -r`), and `agent_stack.py` wires
+      `aws_s3_assets.Asset(path=agent_zip_path)` against that zip file rather than
+      the raw `build/agent` directory — makes the CDK wiring testable with a tiny
+      fixture zip (`AGENT_ZIP_PATH` env var) without invoking `uv`/`zip` in unit
+      tests. Verified locally: `uv export --only-group agent` + `uv pip install
+      --target build/agent --python-platform aarch64-manylinux2014 --python-version
+      3.12 --only-binary :all:` resolved and installed all 50 packages (including
+      `cryptography`) as prebuilt arm64 wheels — no source builds needed. Output
+      zip: 29.3 MB, well under the documented 250 MB AgentCore Runtime limit.
+- [x] 8.2 `infra/stacks/agent_stack.py` — `aws_s3_assets.Asset(path=agent_zip_path)`,
       `CfnRuntime` with `codeConfiguration` (`runtime="PYTHON_3_12"`, no container/ECR),
       agent execution role (`bedrock:InvokeModel` on the Nova Micro FM ARN **and** the
       `us.amazon.nova-micro-v1:0` inference-profile ARN, `bedrock:Retrieve` on the one
@@ -382,6 +395,18 @@ sub-PR if the real diff exceeds ~450 lines; the split points are noted inline be
       `::test_agent_role_grants_both_model_arns`, `::test_agent_role_has_no_wildcard_resource`.
       GREEN: implement. Acceptance: `infrastructure` — *Least-Privilege Agent Role*;
       `agent-runtime` — *Foundation Model*; design D3, D2. Est: ~155 lines.
+      **Deviation from design §9.2's 3-statement sketch**: the role also grants the
+      four CloudWatch Logs actions (`logs:CreateLogGroup`, `logs:DescribeLogStreams`,
+      `logs:CreateLogStream`, `logs:PutLogEvents`) AWS's docs list as required for
+      the direct-deploy execution role to write its own logs, scoped to the
+      `/aws/bedrock-agentcore/runtimes/*` ARN pattern (never `Resource: "*"`) —
+      verified against
+      https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-permissions.html.
+      `logs:DescribeLogGroups` (needs an account-wide `log-group:*` resource) and
+      `logs:PutResourcePolicy` (a log-group admin action), plus X-Ray and
+      `cloudwatch:PutMetricData`, were deliberately NOT granted (trimmed further
+      than AWS's generic template — see `agent_stack.py`'s module docstring for the
+      "to verify at deploy" risk this leaves open).
 - [ ] 8.3 `infra/stacks/api_stack.py` — Lambda (Python 3.12, 512 MB) with least-privilege
       role (`bedrock-agentcore:InvokeAgentRuntime` on one runtime ARN, `dynamodb:GetItem|
       Query|PutItem|UpdateItem` on one table ARN, no wildcard), HTTP API `POST /v1/chat`,
@@ -392,18 +417,23 @@ sub-PR if the real diff exceeds ~450 lines; the split points are noted inline be
       `::test_lambda_role_has_no_wildcard_resource`, `::test_custom_domain_configured_with_acm`.
       GREEN: implement. Acceptance: `infrastructure` — *Least-Privilege Lambda Role*,
       *Custom Domain*; design §9.2 Lambda role JSON, §11 DNS runbook.
-      Est: ~180 lines.
-- [ ] 8.4 Wire `infra/app.py` to instantiate all three stacks in dependency order with
-      explicit `add_dependency` calls; extend `test_app_synth.py` to assert `cdk synth
-      --all` succeeds end to end.
+      Est: ~180 lines. **PR8b.**
+- [x] 8.4a (PR8a) Wire `infra/app.py` to instantiate `DataStack` -> `AgentStack` with
+      an explicit stack dependency (`add_stack_dependency` — `Stack.add_dependency`
+      is deprecated in this CDK version); extend `test_app_synth.py` to assert synth
+      produces both stacks and the dependency edge. `ApiStack` wiring is 8.4b (PR8b).
       Acceptance: `infrastructure` — *Infrastructure as Code*, scenario *Full stack
-      recreation*. Est: ~35 lines.
+      recreation* (partial — full three-stack synth completes in PR8b). Est: ~35 lines.
+- [ ] 8.4b (PR8b) Extend `infra/app.py`/`test_app_synth.py` to add `ApiStack` and
+      assert `cdk synth --all` succeeds end to end across all three stacks.
 - [ ] 8.5 Document the one-time manual DNS step (ACM CNAME validation, then the
       `api.sergiomondragon.com` CNAME at DigitalOcean) inline as a code comment on the
-      certificate construct, pointing to the Phase 9 runbook.
-- [ ] 8.G **Gate**: fresh-context `security-review` + code review before merging PR 8.
-      If the real diff exceeds ~450 lines, split 8.1-8.2 (AgentStack) from 8.3-8.4
-      (ApiStack) into PR8a/PR8b.
+      certificate construct, pointing to the Phase 9 runbook. **PR8b** (the ACM
+      certificate construct lives in `api_stack.py`).
+- [ ] 8.G-a **Gate**: fresh-context `security-review` + code review before merging
+      PR8a (this AgentStack slice — least-privilege agent role is the stated focus).
+- [ ] 8.G-b **Gate**: fresh-context `security-review` + code review before merging
+      PR8b (ApiStack).
 
 ## Phase 9: Scripts, Smoke Test, Runbooks, README (PR 9)
 
