@@ -14,6 +14,7 @@ from aws_cdk.assertions import Match, Template
 
 from api.adapters.dynamo_keys import PARTITION_KEY, SORT_KEY, TTL_ATTRIBUTE
 from infra.stacks.data_stack import CONTENT_PREFIXES, EMBEDDING_DIMENSION, EMBEDDING_MODEL_ID, DataStack
+from shared.names import CONTENT_DATA_SOURCE_NAME
 
 
 def _synth_template() -> Template:
@@ -182,6 +183,15 @@ def test_data_source_scopes_to_the_fixed_content_layout() -> None:
             }
         },
     )
+
+
+def test_data_source_name_matches_the_shared_constant() -> None:
+    """`scripts/sync_content.py` looks up this data source by name via
+    `ListDataSources` — a drift here would silently break the manual sync
+    procedure (`knowledge-base` spec, *Manual Sync Procedure*)."""
+    template = _synth_template()
+
+    template.has_resource_properties("AWS::Bedrock::DataSource", {"Name": CONTENT_DATA_SOURCE_NAME})
 
 
 def test_kb_role_has_no_wildcard_resource() -> None:

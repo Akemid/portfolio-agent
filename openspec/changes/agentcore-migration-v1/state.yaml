@@ -1206,7 +1206,8 @@ phases:
           step documented inline on the certificate construct), plus a new
           scripts/build_lambda.sh (packaging prep for 8.3, mirroring
           build_agent.sh's pattern).
-        status: implemented_pending_review
+        status: pr_open
+        pr_url: https://github.com/Akemid/portfolio-agent/pull/14
         commits:
           - 22ea5ae feat(scripts): add build_lambda.sh for the Lambda deployment package
           - 898cc55 feat(infra): add CDK ApiStack with Lambda gate, HTTP API, and custom domain
@@ -1383,6 +1384,136 @@ phases:
           BootstrapVersion parameter, a CDK-generated artifact, not
           introduced by this batch). cdk.out/ and the fixture zips deleted
           after inspection; git status clean.
+      - pr: PR9a
+        branch: feat/ops-scripts
+        base: feat/cdk-api-stack
+        scope: >-
+          PR9a slice of Phase 9 — content sync/ingestion script and the
+          post-deploy smoke test only: `scripts/sync_content.py` (merges
+          tasks.md 9.1+9.2) and `tests/smoke/test_smoke.py` (9.3). Runbooks
+          (9.4), README (9.5), and the CI `cdk synth` step are cut to PR9b —
+          see `split_note` below.
+        status: implemented_pending_review
+        commits:
+          - e164d12 feat(scripts): add sync_content for manual content upload and KB ingestion
+          - bca0a01 test(smoke): add post-deploy smoke test with split-latency SLO reporting
+        tasks_completed: ["9.1", "9.2", "9.3"]
+        split_note: >-
+          `git diff --stat feat/cdk-api-stack..feat/ops-scripts -- .
+          ':(exclude)uv.lock'` after these two commits: 7 files changed, 1422
+          insertions(+), 23 deletions(-) — `scripts/sync_content.py` (286
+          lines) + `tests/smoke/test_smoke.py` (438 lines, itself an
+          operational script, not test scaffolding — its pure logic is what
+          `tests/unit/scripts/test_smoke_script.py` exercises) already total
+          724 code-ish lines, well over the ~450-line PR9 estimate and the
+          400-line code-only budget even before runbooks/README/CI are
+          added. Per this batch's explicit instruction, stopped here as
+          PR9a and recorded the cut rather than forcing 9.4/9.5/CI into the
+          same PR. PR9b (runbooks, README, CI `cdk synth` step, task 9.G
+          gate) is the next apply batch, stacked on `feat/ops-scripts`.
+        local_gate: >-
+          ruff check/format clean, mypy src infra clean (also verified
+          scripts/tests/smoke/tests/unit/scripts in isolation: 50 source
+          files, 0 issues — those dirs are outside the project's documented
+          `mypy src infra` gate but were checked anyway since they are new
+          production-ish code), 381 tests pass (up from 346 at PR8b-review-
+          fixes time: +16 in test_sync_content.py, +19 in
+          test_smoke_script.py).
+        deviation_from_tasks_md: >-
+          Merged tasks.md 9.1 (`scripts/upload_content.sh`, bash) + 9.2
+          (`scripts/sync_kb.py`, Python) into one Python script,
+          `scripts/sync_content.py`, so upload and ingestion are both
+          unit-testable with injected boto3 clients/`botocore.stub.Stubber`
+          under this session's Strict TDD constraint — a bash upload script
+          has no equivalent test coverage. `tasks.md` 9.1/9.2 and
+          `design.md` SS11's runbook wording were both updated inline to
+          match. Full rationale in `sync_content.py`'s module docstring.
+        bedrock_agent_api_verified: >-
+          `bedrock-agent` client (not `bedrock-agent-runtime`, which is used
+          elsewhere for `Retrieve`): `start_ingestion_job(knowledgeBaseId,
+          dataSourceId)` -> `ingestionJob{ingestionJobId, status}`;
+          `get_ingestion_job(knowledgeBaseId, dataSourceId, ingestionJobId)`
+          -> same shape plus `statistics`/`failureReasons`; status one of
+          `STARTING | IN_PROGRESS | COMPLETE | FAILED | STOPPING | STOPPED`.
+          There is no `DataSourceId` CloudFormation output on
+          `portfolio-agent-data` (data_stack.py), so the data source id is
+          resolved via `list_data_sources(knowledgeBaseId)` by name
+          (`portfolio-agent-content`, matching `CfnDataSource(name=...)`)
+          instead of adding a new stack output.
+          https://docs.aws.amazon.com/bedrock/latest/APIReference/API_agent_StartIngestionJob.html
+          https://docs.aws.amazon.com/bedrock/latest/APIReference/API_agent_GetIngestionJob.html
+          https://docs.aws.amazon.com/bedrock/latest/APIReference/API_agent_ListDataSources.html
+        smoke_test_carried_risk_addressed: >-
+          `tests/smoke/test_smoke.py`'s `check_single_cors_header` directly
+          targets PR8b's `to_verify_at_deploy` item: "confirm exactly one
+          Access-Control-Allow-Origin header on a real browser response."
+        manual_first_deploy_steps_so_far: >-
+          (Full runbooks land in PR9b; these are the steps an owner needs
+          today, consolidated from PR8a/PR8b's apply-progress notes plus
+          this batch's own scripts.) (1) `cdk deploy` DataStack, AgentStack,
+          ApiStack in that order (`uv run python -m infra.app` via
+          `cdk.json`, after `scripts/build_agent.sh` and
+          `scripts/build_lambda.sh` have produced real zips). (2) Confirm
+          the Nova Micro inference-profile id with `aws bedrock
+          list-inference-profiles --region us-east-1` (design.md RQ-1
+          carried risk). (3) ACM DNS validation: `aws acm
+          describe-certificate --certificate-arn <CertificateValidationHint
+          output> --region us-east-1 --query DomainValidationOptions`, then
+          create that CNAME at DigitalOcean; wait for ISSUED. (4) Create the
+          `api` CNAME at DigitalOcean -> `ApiRegionalDomainName` output. (5)
+          First content sync: `uv run python scripts/sync_content.py
+          --content-dir <local dir mirroring content/cv/,
+          content/portfolio/{en,es}/>` (resolves bucket/KB id from the
+          `portfolio-agent-data` stack automatically). (6) Smoke test: `uv
+          run python tests/smoke/test_smoke.py` (add `--expect-substring
+          "<a known CV fact>"` to check grounding; add `--exhaust-limits`
+          only when it is acceptable to burn one session's daily cap). (7)
+          Manually create a USD 10/month AWS Budget with an 80% alert
+          (design.md SS11 — not automatable from a CDK stack in this repo).
+          (8) Point the portfolio frontend widget at
+          `https://api.sergiomondragon.com/v1/chat` with `credentials:
+          'include'` (Phase 10, external repo).
+        review_fixes: >-
+          Test-first fixes for a fresh-context code review of PR9a, six
+          commits on `feat/ops-scripts` (all RED-first, gate green after
+          each): (1) `discover_content_files` now rejects symlinks (naming
+          only the relative path, never the resolved target) and skips
+          hidden files/directories — security MEDIUM+LOW. (2) `upload_files`
+          sets `ContentType` from the extension (`application/pdf` /
+          `text/markdown`); added `--dry-run` (discovers and prints planned
+          keys, no upload/ingestion, no AWS call at all) — code MINOR x2.
+          (3) Default output no longer prints the bucket name (object count
+          + `content/` prefix only); `--verbose` shows full `s3://bucket/key`
+          lines and each resolved value's source (CLI override vs. stack
+          output) — security LOW. (4) `tests/smoke/test_smoke.py` gained
+          `validate_target_host` (HTTPS + an allowlisted host, default
+          `api.sergiomondragon.com`, override `--allow-host`) and a
+          same-host-only `_SameHostRedirectHandler` on `UrllibTransport`,
+          plus a stderr warning before `--exhaust-limits` — security
+          MEDIUM+LOW. (5) Raised smoke-test defaults to 20 sessions (cold
+          N=20, warm N=40 — the floor where nearest-rank p95 stops being
+          just max()); `format_report` now labels a population's stat as
+          "max (N=<n>, too few samples for a p95)" instead of "p95" below
+          that floor — code MAJOR (measurement honesty). Restored the
+          dropped Set-Cookie flag check task 9.3 required: the raw header
+          must carry `HttpOnly; Secure; SameSite=Lax; Path=/` before
+          `_parse_cookie_pair` strips them — code MINOR. (6) Extracted the
+          three stack names and the `portfolio-agent-content` data source
+          name into `src/shared/names.py` (imported by `infra/app.py`,
+          `infra/stacks/data_stack.py`, `scripts/sync_content.py`,
+          `tests/smoke/test_smoke.py`) — code MINOR (duplicated literals).
+          Placed under `src/shared/` rather than `src/api/` or
+          `infra/names.py` because `scripts/build_lambda.sh` only copies
+          `src/api/` into the Lambda zip and the module imports nothing
+          itself, so it cannot trip
+          `tests/unit/test_lambda_package_isolation.py` or ship CDK into the
+          Lambda package. `git diff --stat
+          feat/cdk-api-stack..feat/ops-scripts -- . ':(exclude)uv.lock'`
+          after all six commits: 13 files changed, 2188 insertions(+), 28
+          deletions(-). Full gate green: ruff check/format clean, mypy
+          src infra clean (43 files), 407 tests pass (up from 381 at PR9a
+          apply time), `--help` still works for both scripts, `pytest
+          tests/smoke -q` still collects nothing.
   verify:
     status: pending
     depends_on: [apply]

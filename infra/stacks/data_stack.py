@@ -50,6 +50,7 @@ from aws_cdk import aws_s3vectors as s3vectors
 from constructs import Construct
 
 from api.adapters.dynamo_keys import PARTITION_KEY, SORT_KEY, TTL_ATTRIBUTE
+from shared.names import CONTENT_DATA_SOURCE_NAME
 
 TABLE_NAME = "portfolio-agent-sessions"
 EMBEDDING_MODEL_ID = "amazon.titan-embed-text-v2:0"
@@ -227,7 +228,7 @@ class DataStack(Stack):
             self,
             "ContentDataSource",
             knowledge_base_id=self.knowledge_base.attr_knowledge_base_id,
-            name="portfolio-agent-content",
+            name=CONTENT_DATA_SOURCE_NAME,
             data_source_configuration=bedrock.CfnDataSource.DataSourceConfigurationProperty(
                 type="S3",
                 s3_configuration=bedrock.CfnDataSource.S3DataSourceConfigurationProperty(

@@ -642,10 +642,12 @@ that deploys a few times a year.
 
 ### Runbooks
 
-**Content update** — `scripts/upload_content.sh <file>` (uploads to
-`content/cv/` or `content/portfolio/{en,es}/`; the file never enters git) →
-`uv run python scripts/sync_kb.py` (starts `StartIngestionJob`, polls to terminal state)
-→ run the smoke test. Do not sync while demonstrating the bot (RQ-4).
+**Content update** — `uv run python scripts/sync_content.py --content-dir <dir>`
+(uploads every file in `<dir>` — mirroring the `content/cv/` /
+`content/portfolio/{en,es}/` layout — to the content S3 bucket, then starts
+`StartIngestionJob` and polls to a terminal state; the local directory never
+enters git) → run the smoke test. Do not sync while demonstrating the bot
+(RQ-4). See `docs/runbooks/content-update.md` for the full runbook.
 
 **DNS and certificate (one-time, manual at DigitalOcean).** `sergiomondragon.com` is
 hosted at DigitalOcean (`ns1-3.digitalocean.com`), so Route 53 is not used.

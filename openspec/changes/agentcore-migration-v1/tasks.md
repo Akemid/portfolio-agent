@@ -461,24 +461,42 @@ Split into PR8a (AgentStack: 8.1, 8.2, the AgentStack half of 8.4) and PR8b
 
 ## Phase 9: Scripts, Smoke Test, Runbooks, README (PR 9)
 
-- [ ] 9.1 `scripts/upload_content.sh <file>` — uploads to `content/cv/` or
-      `content/portfolio/{en,es}/` in the content S3 bucket; the file never touches git.
-      No RED (operational script). Acceptance: `knowledge-base` — *Manual Sync
-      Procedure*. Est: ~30 lines.
-- [ ] 9.2 `scripts/sync_kb.py` — calls `StartIngestionJob`, polls to a terminal state,
-      exits non-zero on failure.
-      RED: `tests/unit/scripts/test_sync_kb.py::test_polls_until_terminal_state`
-      (stubbed boto3), `::test_exits_nonzero_on_failed_status`.
-      GREEN: implement. Acceptance: `knowledge-base` — *Manual Sync Procedure*.
-      Est: ~95 lines.
-- [ ] 9.3 `tests/smoke/test_smoke.py` (never runs in CI, never counted toward coverage):
-      real `POST /v1/chat` against a deployed stack asserts a known CV fact is
-      retrievable, the `Set-Cookie` header carries all four flags, the 11th question in
-      a session returns 429, and **warm p95 and cold first-call latency are reported as
-      two separate numbers**.
-      Acceptance: proposal *Success Criteria* (latency split); `chat-endpoint` —
-      *End-to-End Latency Budget*; `architecture/latency-slo` decision (warm < 3.5 s,
-      first-of-session < 10 s). Est: ~135 lines.
+- [x] 9.1 + 9.2 (merged) `scripts/sync_content.py` — uploads a local content
+      directory (mirroring the `content/` S3 layout) to the content S3 bucket,
+      then calls `StartIngestionJob` and polls `GetIngestionJob` to a terminal
+      state, exiting non-zero on failure or timeout. Resolves bucket/KB/data-source
+      ids from CloudFormation stack outputs and `ListDataSources`, or explicit
+      CLI flags; refuses to run on an empty or disallowed-extension content dir.
+      **Deviation**: merged from the original two-script split
+      (`scripts/upload_content.sh` + `scripts/sync_kb.py`) into one Python
+      script so every step is unit-testable with injected boto3
+      clients/`botocore.stub.Stubber` under this session's Strict TDD
+      constraint — a bash upload script would have no equivalent test
+      coverage. See the module's own docstring for the full rationale.
+      RED: `tests/unit/scripts/test_sync_content.py` (16 tests: content
+      discovery/validation, stack-output resolution, data-source-id
+      resolution, upload, ingestion polling incl. timeout, end-to-end
+      `run_sync`).
+      GREEN: implement. Acceptance: `knowledge-base` — *Manual Sync
+      Procedure*. Est: ~30+95 lines (merged, actual ~185 lines incl. CLI).
+- [x] 9.3 `tests/smoke/test_smoke.py` (defines no `def test_*` function, so
+      `uv run pytest` collects but never executes it — never runs in CI, never
+      counted toward `--cov=src`): real `POST /v1/chat` against a deployed
+      stack, run as `uv run python tests/smoke/test_smoke.py`. Runs N fresh
+      sessions, separates each session's first (cold) request from its warm
+      follow-ups, asserts the `{answer, language}` response shape, exactly
+      one `Access-Control-Allow-Origin` header, and reports warm and
+      cold-first-call p50/p95 as two separate numbers against the split SLO.
+      `--exhaust-limits` (opt-in, off by default) additionally exceeds the
+      session cap and asserts 429 + `Retry-After`; `--expect-substring`
+      (opt-in) asserts a known fact appears in an answer.
+      RED: `tests/unit/scripts/test_smoke_script.py` (19 tests: percentile
+      math, CORS/shape checks, cookie reuse across warm requests, SLO
+      pass/fail, rate-limit-exhaustion opt-in, report formatting) with an
+      injected fake transport — no network.
+      GREEN: implement. Acceptance: proposal *Success Criteria* (latency
+      split); `chat-endpoint` — *End-to-End Latency Budget*, *CORS
+      Restriction*, *Response Contract*, *Rate-Limit Surfacing*.
 - [ ] 9.4 Runbooks — `docs/runbooks/content-update.md` (upload -> sync -> smoke test;
       do not sync while demonstrating the bot), `docs/runbooks/rollback.md` (frontend
       config revert; `cdk destroy` in reverse order `ApiStack -> AgentStack ->

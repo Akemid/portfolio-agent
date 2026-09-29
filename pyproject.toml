@@ -39,7 +39,7 @@ dev = [
 package = false
 
 [tool.pytest.ini_options]
-pythonpath = ["src", "."]
+pythonpath = ["src", "scripts", "."]
 testpaths = ["tests"]
 
 [tool.ruff]
