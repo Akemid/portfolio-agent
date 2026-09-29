@@ -20,7 +20,7 @@ The system MUST expose exactly one public route, `POST /v1/chat`, for asking a q
 
 - GIVEN the route `/v1/chat` exists
 - WHEN a client sends `GET /v1/chat`
-- THEN the system returns `405 Method Not Allowed` without invoking the agent
+- THEN the system returns `404 Not Found` without invoking the agent (API Gateway HTTP API has no per-method 405 for an unmatched route — any unmatched method/path combination returns a generic 404, per `api_stack.py`'s module docstring)
 
 ### Requirement: Request Contract
 

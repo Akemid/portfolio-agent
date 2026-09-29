@@ -220,8 +220,10 @@ ReturnValues:        ALL_NEW
 This is what makes concurrent bursts safe without a lock.
 
 **IP cap — weighted sliding window.** The `rate-limiting` spec requires a *rolling*
-60-second window. One `Query` on `pk = IP#…` returns the current and previous minute
-buckets; the estimate is
+60-second window. One strongly consistent `GetItem` on the previous minute's bucket
+(`pk = IP#…`, `sk = MIN#…`) returns `prev_count`; the current bucket is read and written
+by the conditional `UpdateItem` itself. A point read is cheaper than a `Query` and keeps
+`dynamodb:Query` out of the Lambda's IAM policy. The estimate is
 
 ```
 estimate = prev_count * (1 - elapsed_fraction_of_current_minute) + curr_count
@@ -472,7 +474,7 @@ demonstrating the bot.
 |-------|----------|-------|
 | Lambda init (cold) | ~300–600 ms | Python 3.12, small ZIP (boto3 pinned, nothing else), 512 MB. AWS publishes no per-runtime figure; init time scales with package size and dependency count ([cold starts](https://aws.amazon.com/blogs/compute/understanding-and-remediating-cold-starts-an-aws-lambda-perspective/), [lifecycle](https://docs.aws.amazon.com/lambda/latest/dg/lambda-runtime-environment.html)) |
 | Lambda warm | < 20 ms | — |
-| DynamoDB (1 Query + 2 conditional UpdateItem) | ~15–30 ms | on-demand, single region |
+| DynamoDB (1 consistent GetItem + 2 conditional UpdateItem) | ~15–30 ms | on-demand, single region |
 | **AgentCore session cold start** | **~5–10 s** | Container cold start is 20–30 s, dominated by image pull, with 5–10 s of application startup (`agents-harden`). Direct code deployment removes the image pull, leaving application startup + platform overhead |
 | AgentCore warm | ~50 ms overhead | same-session requests route to the initialized environment |
 | KB retrieve (S3 Vectors) | ~100 ms+ | S3 Vectors targets infrequent-query workloads at ~100 ms or more ([AWS vector solutions](https://aws.amazon.com/blogs/machine-learning/aws-vector-solutions-build-agentic-ai-where-your-data-lives/)) |
@@ -547,11 +549,14 @@ in the gate.
   "Action":"bedrock-agentcore:InvokeAgentRuntime",
   "Resource":["<AgentRuntimeArn>","<AgentRuntimeArn>/*"]},
  {"Sid":"OneTable","Effect":"Allow",
-  "Action":["dynamodb:GetItem","dynamodb:Query","dynamodb:PutItem","dynamodb:UpdateItem"],
+  "Action":["dynamodb:GetItem","dynamodb:PutItem","dynamodb:UpdateItem"],
   "Resource":"<TableArn>"}]}
 ```
 
-No `bedrock:*`, no `s3:*`, no `dynamodb:Scan`, no wildcard resource. Notably **not**
+No `bedrock:*`, no `s3:*`, no `dynamodb:Scan`, no `dynamodb:Query` (the IP rate
+limiter reads the previous-minute bucket with a point `GetItem`, not a
+`Query` — `src/api/adapters/dynamo_rate_limiter.py::_check_ip`), no wildcard
+resource. Notably **not**
 granted: `bedrock-agentcore:InvokeAgentRuntimeCommand`, which is arbitrary shell
 execution inside the live microVM with the runtime's full role (`agents-harden`). Logs
 come from the managed `AWSLambdaBasicExecutionRole`.

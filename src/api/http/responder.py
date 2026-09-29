@@ -20,6 +20,12 @@ _ALLOW_CREDENTIALS = "Access-Control-Allow-Credentials"
 _VARY = "Vary"
 
 
+# Once the API Gateway HTTP API in front of this Lambda has CORS configured
+# (`infra/stacks/api_stack.py::_build_http_api`), API Gateway ignores CORS
+# headers returned from the backend integration on every response:
+# https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-cors.html
+# So the headers `cors_headers` builds only matter for direct/local Lambda
+# invocation (e.g. tests, `sam local`), not for a real deployed request.
 def cors_headers(origin: str | None, allowlist: Sequence[str]) -> dict[str, str]:
     """Return CORS headers for `origin`, restricted to `allowlist`.
 
