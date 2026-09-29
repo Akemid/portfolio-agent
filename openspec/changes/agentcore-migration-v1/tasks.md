@@ -336,13 +336,13 @@ sub-PR if the real diff exceeds ~450 lines; the split points are noted inline be
 
 ## Phase 7: CDK DataStack (PR 7, can proceed in parallel with PR2-6)
 
-- [ ] 7.1 `infra/app.py` + `cdk.json` — app skeleton declaring stack instantiation order
+- [x] 7.1 `infra/app.py` + `cdk.json` — app skeleton declaring stack instantiation order
       `DataStack -> AgentStack -> ApiStack` (Agent/Api added in Phase 8), explicit
       `env={account, region: "us-east-1"}`.
       RED: `tests/unit/infra/test_app_synth.py::test_app_synth_succeeds` (fails until
       7.2 exists — acceptable bootstrap-then-fill pattern for infra tasks).
       GREEN: minimal app that synths with only DataStack. Est: ~40 lines.
-- [ ] 7.2 `infra/stacks/data_stack.py` — S3 content bucket (`RemovalPolicy.RETAIN`,
+- [x] 7.2 `infra/stacks/data_stack.py` — S3 content bucket (`RemovalPolicy.RETAIN`,
       Block Public Access), S3 vector bucket + `CfnIndex` (dimension=1024), DynamoDB
       table `portfolio-agent-sessions` (`pk`, `sk`, TTL attribute `ttl`, on-demand,
       `RemovalPolicy.RETAIN`), `CfnKnowledgeBase` (S3_VECTORS storage config, Titan V2
@@ -355,10 +355,14 @@ sub-PR if the real diff exceeds ~450 lines; the split points are noted inline be
       GREEN: implement the stack. Acceptance: `infrastructure` — *Data Retention on
       Destroy*; `knowledge-base` — *S3 Data Source Layout*, *Embeddings and Vector
       Store*; design §8 RQ-1 (1024 dims), §9.2 KB role. Est: ~220 lines.
-- [ ] 7.3 Additional synth assertions — no other role in the stack grants a wildcard
+- [x] 7.3 Additional synth assertions — no other role in the stack grants a wildcard
       resource; content bucket path prefixes match `content/cv/` and
       `content/portfolio/{en,es}/`. Folded into 7.2's test file for cohesion.
       Est: included above.
+      **Deviation**: `Bedrock::DataSource.S3Configuration.InclusionPrefixes` allows at
+      most one entry (verified via AWS CDK docs), so the data source uses a single
+      `content/` prefix — which already covers both `content/cv/` and
+      `content/portfolio/{en,es}/` — instead of three separate prefixes.
 - [ ] 7.G **Gate**: fresh-context `security-review` + code review before merging PR 7
       (least-privilege IAM on the KB role is the focus).
 

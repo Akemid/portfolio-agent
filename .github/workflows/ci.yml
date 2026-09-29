@@ -59,12 +59,44 @@ jobs:
           git diff --unified=0 "origin/${{ github.event.pull_request.base.ref || 'main' }}"...HEAD > pr.diff || true
           bash scripts/check_no_content.sh pr.diff
 
-      - name: CDK synth
-        # Skipped until infra/app.py exists (added in PR7 — CDK DataStack).
-        # See openspec/changes/agentcore-migration-v1/tasks.md, Phase 7.
+      - name: Build placeholder deployment zips for cdk synth
+        # AgentStack/ApiStack (infra/stacks/agent_stack.py, api_stack.py) need a
+        # real file on disk at AGENT_ZIP_PATH/LAMBDA_ZIP_PATH — cdk synth only
+        # references the file for the S3 asset, it never installs or runs it,
+        # so a tiny fixture zip is enough (same pattern already used by
+        # tests/unit/infra/test_app_synth.py). This avoids running
+        # scripts/build_agent.sh / scripts/build_lambda.sh's arm64 wheel
+        # install in CI, which needs network access and adds minutes per run.
         run: |
-          if [ -f infra/app.py ]; then
-            uv run cdk synth --all
-          else
-            echo "Skipping cdk synth: infra/app.py not yet added (see PR7)."
-          fi
+          mkdir -p build
+          uv run python -c "import zipfile; zipfile.ZipFile('build/agent.zip', 'w').writestr('main.py', '')"
+          uv run python -c "import zipfile; zipfile.ZipFile('build/lambda.zip', 'w').writestr('api/__init__.py', '')"
+
+      - name: CDK synth (cdk synth against a neutralized fake AWS account)
+        # Never touches real AWS: CDK_DEFAULT_ACCOUNT is the CDK-documented
+        # placeholder account, the AWS credential files/env vars are
+        # neutralized, and --no-lookups disables any context lookup that
+        # would otherwise need real credentials (gotcha: the aws-cdk@2 CLI's
+        # own STS-resolved account can override CDK_DEFAULT_ACCOUNT for a
+        # construct that needs a concrete account, e.g. aws_s3_assets.Asset,
+        # unless the credential files/vars are also cleared).
+        #
+        # Uses `npx aws-cdk@2`, never bare `npx cdk` — the unscoped `cdk`
+        # package on npm is an unrelated tool and silently prints its own
+        # version instead of running the AWS CDK CLI. ubuntu-latest ships a
+        # current Node.js/npx already, so no separate Node setup step is
+        # added here.
+        env:
+          AWS_CONFIG_FILE: /dev/null
+          AWS_SHARED_CREDENTIALS_FILE: /dev/null
+          AWS_ACCESS_KEY_ID: "x"
+          AWS_SECRET_ACCESS_KEY: "x"
+          AWS_SESSION_TOKEN: ""
+          AWS_PROFILE: ""
+          CDK_DEFAULT_ACCOUNT: "000000000000"
+          CDK_DEFAULT_REGION: "us-east-1"
+          AGENT_ZIP_PATH: build/agent.zip
+          LAMBDA_ZIP_PATH: build/lambda.zip
+        run: |
+          # cdk synth via npx aws-cdk@2 (see the step name/comment above for why).
+          npx --yes aws-cdk@2 synth --all --no-lookups --quiet

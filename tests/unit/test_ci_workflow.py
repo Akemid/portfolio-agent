@@ -17,6 +17,17 @@ REQUIRED_COMMANDS = [
     "pip-audit",
     "check_no_content.sh",
     "cdk synth",
+    "aws-cdk@2",
+    "--no-lookups",
+]
+
+# The cdk synth step MUST run against a neutralized, non-real AWS account —
+# never real credentials or a real account id (Phase 9 task 9.4/CI change:
+# gotchas/cdk-asset-account-leak).
+REQUIRED_CDK_SYNTH_SAFETY_ENV_VARS = [
+    "CDK_DEFAULT_ACCOUNT",
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
 ]
 
 
@@ -47,6 +58,28 @@ def test_ci_yaml_has_required_jobs(repo_root: Path) -> None:
     all_run_steps = _flatten_run_commands(workflow)
     for command in REQUIRED_COMMANDS:
         assert command in all_run_steps, f"missing required CI command: {command}"
+
+
+def _find_cdk_synth_step(workflow: dict[str, Any]) -> dict[str, Any]:
+    for job in workflow.get("jobs", {}).values():
+        for step in job.get("steps", []):
+            if "aws-cdk@2 synth" in step.get("run", ""):
+                return step
+    raise AssertionError("no CI step runs `npx aws-cdk@2 synth`")
+
+
+def test_cdk_synth_step_never_uses_a_real_aws_account(repo_root: Path) -> None:
+    """The cdk synth step MUST run with a neutralized fake account, never
+    real AWS credentials — synth must work identically on a fork PR with no
+    AWS access, and must never leak a real account id into a log."""
+    workflow = _load_workflow(repo_root)
+    step = _find_cdk_synth_step(workflow)
+    env = step.get("env", {})
+
+    for var in REQUIRED_CDK_SYNTH_SAFETY_ENV_VARS:
+        assert var in env, f"cdk synth step must set {var} (see gotchas/cdk-asset-account-leak)"
+    assert env["CDK_DEFAULT_ACCOUNT"] == "000000000000", "must use the CDK-documented fake account"
+    assert "--no-lookups" in step["run"]
 
 
 def test_ci_triggers_on_push_and_pull_request(repo_root: Path) -> None:
