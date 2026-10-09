@@ -46,15 +46,23 @@ def build_response(
     return {"statusCode": status_code, "headers": response_headers, "body": json.dumps(body)}
 
 
-def success_response(result: AnswerResult, *, origin: str | None, allowlist: Sequence[str]) -> dict[str, Any]:
+def success_response(
+    result: AnswerResult,
+    *,
+    origin: str | None,
+    allowlist: Sequence[str],
+    cookie_secure: bool = True,
+) -> dict[str, Any]:
     """Build the `200` response (`chat-endpoint` spec, *Response Contract*).
 
     Adds `Set-Cookie` only when `decide_session` issued a fresh session
     (`session-identity` spec, *Cookie Issuance*: no `Set-Cookie` on reuse).
+    `cookie_secure` defaults to `True`; the composition root sets it from
+    `Settings.cookie_secure`, `False` only for unencrypted local development.
     """
     headers = cors_headers(origin, allowlist)
     if result.session_is_new:
-        headers["Set-Cookie"] = build_set_cookie_header(result.session.session_id)
+        headers["Set-Cookie"] = build_set_cookie_header(result.session.session_id, secure=cookie_secure)
     body = {"answer": result.answer.answer, "language": result.answer.language}
     return build_response(200, body, headers)
 

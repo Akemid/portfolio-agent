@@ -48,6 +48,15 @@ def test_new_session_sets_cookie() -> None:
     response = success_response(result, origin=ALLOWED_ORIGIN, allowlist=ALLOWLIST)
 
     assert response["headers"]["Set-Cookie"].startswith(f"session_id={result.session.session_id}")
+    assert "Secure" in response["headers"]["Set-Cookie"]
+
+
+def test_new_session_cookie_omits_secure_when_disabled_for_local_dev() -> None:
+    result = _result(session_is_new=True)
+
+    response = success_response(result, origin=ALLOWED_ORIGIN, allowlist=ALLOWLIST, cookie_secure=False)
+
+    assert "Secure" not in response["headers"]["Set-Cookie"]
 
 
 def test_429_includes_retry_after_and_error_body() -> None:
